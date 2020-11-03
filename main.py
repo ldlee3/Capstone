@@ -1,18 +1,10 @@
-
-# UPDATED: 10/21/2020
+# UPDATED: 10/31/2020
 
 # TO DO: Change from QR detection to ALVAR detection
 
-# This program runs a Gstreamer pipeline using /dev/video2 as a src
-# and send the live cast to opencv, which scans each frame for a QR code.
-# If a QR Code is detected, it will outline the QR Code in purple and
-# display the decoded string above the QR Code. It then sends these frames
-# over udp to ip: 192.168.2.0 port: 8080. Use the pipeline below.
-
-# Receiving Pipeline:
-#  gst-launch-1.0 udpsrc address=192.168.2.0 port=8080 ! \
-#  application/x-rtp, encoding-name=H265, payload=96 ! rtph265depay ! \
-#  h265parse ! queue ! omxh265dec ! nvvidconv ! ximagesink
+# This program starts a Gstreamer pipeline sends it camera frames to OpenCV.
+# OpenCV has the ability to process the video (currently does not) and sends the frames
+# over UDP using ip 192.168.2.0 and port 8080. .
 
 
 import sys
@@ -43,6 +35,7 @@ def main():
 			continue
 
 		frame = cam.get_frame()
+		# color correction for receiver end
 		img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
 		# Simple Aruco detection
