@@ -1,17 +1,17 @@
-# UPDATED: 10/27/2020
+# UPDATED: 10/31/2020
 
 # File: receiver.py
 
-# TO DO: save image on demand
+# DOING: save image on demand
 # DONE: save video on demand
-# Resource: https://gist.github.com/NBonaparte/89fb1b645c99470bc0f6
+
 
 '''
 Full Receiving Pipeline:
 gst-launch-1.0 udpsrc address=192.168.2.0 port=8080 ! application/x-rtp ! rtph265depay ! tee name=t !
 queue ! h265parse ! omxh265dec ! nvvidconv ! ximagesink t. !
 queue ! h265parse ! matroskamux ! filesink location=vidoutput#.mkv async=false t. !
-queue ! h265parse ! decodebin ! jpegenc ! filesink location=imageout#.jpeg async=false
+queue ! h265parse ! omxh265dec ! jpegenc ! filesink location=imageout#.jpeg async=false
 '''
 
 
@@ -23,11 +23,10 @@ gi.require_version('GdkX11', '3.0')
 gi.require_version('GstVideo', '1.0')
 from gi.repository import GObject, Gst, Gtk, GdkX11, GstVideo
 
-GObject.threads_init()
-Gst.init(None)
 
 ip = '192.168.2.0'
 port = '8080'
+
 
 def get_recv_pipeline():
 	return ("udpsrc address="+ip+" port="+port+" ! application/x-rtp ! rtph265depay ! "
@@ -60,6 +59,7 @@ class Receiver(Gtk.Window):
 		hbox.pack_end(self.button2, False, False, 0)
 
 		# Create GStreamer Receiver Pipeline
+		self.count = 0
 		self.running = False
 		self.num_snapshots = 0
 		self.num_recordings = 0
@@ -74,7 +74,6 @@ class Receiver(Gtk.Window):
 		self.show_all()
 		self.xid = self.player_window.get_property('window').get_xid()
 		self.play()
-		Gtk.main()
 
 
 	def play(self):
@@ -101,6 +100,8 @@ class Receiver(Gtk.Window):
 
 
 	def on_message(self, bus, message):
+		#if message.src.get_name() != 'display':
+		#	print(message.src.get_name(), message.type)
 		t = message.type
 		if t == Gst.MessageType.ERROR:
 			err, dbg = message.parse_error()
@@ -120,11 +121,6 @@ class Receiver(Gtk.Window):
 		if struct_name == 'prepare-window-handle':
 			msg.src.set_property('force-aspect-ratio', True)
 			msg.src.set_window_handle(self.xid)
-
-
-	def on_realize(self, widget, data=None):
-		window = widget.get_window()
-		self.player_window.xid = window.get_xid()
 
 
 	def record_button(self, widget):
@@ -163,11 +159,57 @@ class Receiver(Gtk.Window):
 		print('blocked')
 		return True
 
+	def img_probe_block(self, pad, buffer):
+		if self.count == 0:
+			#self.count += 1
+			return Gst.PadProbeReturn(3)
+		else:
+			#imgqueue = self.pipeline.get_by_name('imgqueue')
+			#imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_UPSTREAM, self.img_probe_drop)
+			return Gst.PadProbeReturn(1)
+
+
+	#def img_probe_drop(self, pad, buffer):
+	#	return Gst.PadProbeReturn(0)
+
 
 	def take_snapshot(self, widget):
-		print('Snapshot button pressed')
+		location = 'imgout' + str(self.num_snapshots) + '.png'
+		if self.num_snapshots > 0:
+			self.unlink_imgpipe()
+		self.img_pipe = Gst.parse_bin_from_description(
+			"queue name=imgqueue ! "
+			"h265parse ! "
+			"omxh265dec ! "
+			"nvvidconv ! "
+			"pngenc ! "
+			"filesink name=imgsink location="+location+" async=false",
+			True)
+		if not self.pipeline.add(self.img_pipe):
+			print('img_pipe not added to pipeline')
+		if not self.tee.link(self.img_pipe):
+			print('tee was not linked with img_pipe')
+		self.count = 0
+		imgqueue = self.pipeline.get_by_name('imgqueue')
+		self.img_pipe.set_state(Gst.State.PLAYING)
+		imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.PULL, self.img_probe_block)
+		self.num_snapshots += 1
 
 
-def run():
+	def unlink_imgpipe(self):
+		imgqueue = self.img_pipe.get_by_name('imgqueue')
+		imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_DOWNSTREAM, self.probe_block)
+		self.tee.unlink(self.img_pipe)
+		imgqueue.get_static_pad('sink').send_event(Gst.Event.new_eos())
+
+
+def main():
+	GObject.threads_init()
+	Gst.init(None)
 	pipe = get_recv_pipeline()
 	r = Receiver(pipe)
+	Gtk.main()
+
+
+if __name__=='__main__':
+	main()
