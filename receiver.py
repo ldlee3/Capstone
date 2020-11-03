@@ -1,17 +1,25 @@
-# UPDATED: 10/31/2020
+# UPDATED: 11/2/2020
 
 # File: receiver.py
 
-# DOING: save image on demand
-# DONE: save video on demand
+# Contains:
+#   Class
+#	Receiver class - inherits from Gtk.Window, creates a Gtk Window to play the
+#	incoming stream played over udp from ip 192.168.2.0 on port 8080. The window
+#	includes two buttons, one for capturing images and one for recording video.
+#	This is done by linking bins to tees and unlinking when unneeded.
+#   Functions
+#	get_recv_pipeline() - Gst launch pipeline as a string which receives a stream
+#	from a udpsrc and plays it on ximagesink display. There are two tees in the
+#	pipeline for hooking in the bins for saving images and videos.
 
 
 '''
 Full Receiving Pipeline:
-gst-launch-1.0 udpsrc address=192.168.2.0 port=8080 ! application/x-rtp ! rtph265depay ! tee name=t !
-queue ! h265parse ! omxh265dec ! nvvidconv ! ximagesink t. !
-queue ! h265parse ! matroskamux ! filesink location=vidoutput#.mkv async=false t. !
-queue ! h265parse ! omxh265dec ! jpegenc ! filesink location=imageout#.jpeg async=false
+gst-launch-1.0 udpsrc address=192.168.2.0 port=8080 ! application/x-rtp ! rtph265depay !
+tee name=t ! queue ! h265parse ! omxh265dec ! tee name=t2 ! queue ! nvvidconv ! ximagesink
+t. ! queue ! h265parse ! matroskamux ! filesink location=vidoutput#.mkv async=false
+t2. ! queue ! nvvidconv ! jpegenc ! filesink location=imageout#.jpeg async=false
 '''
 
 
@@ -26,11 +34,6 @@ from gi.repository import GObject, Gst, Gtk, GdkX11, GstVideo
 
 ip = '192.168.2.0'
 port = '8080'
-
-
-def get_recv_pipeline():
-	return ("udpsrc address="+ip+" port="+port+" ! application/x-rtp ! rtph265depay ! "
-	"tee name=t ! queue ! h265parse ! omxh265dec ! nvvidconv ! ximagesink name=display")
 
 
 class Receiver(Gtk.Window):
@@ -68,6 +71,7 @@ class Receiver(Gtk.Window):
 		self.pipeline = None
 		self.launch_pipeline(pipeline)
 		self.tee = self.pipeline.get_by_name('t')
+		self.tee2 = self.pipeline.get_by_name('t2')
 		self.display = self.pipeline.get_by_name('display')
 
 		# Run
@@ -161,46 +165,33 @@ class Receiver(Gtk.Window):
 
 	def img_probe_block(self, pad, buffer):
 		if self.count == 0:
-			#self.count += 1
+			self.count += 1
 			return Gst.PadProbeReturn(3)
 		else:
-			#imgqueue = self.pipeline.get_by_name('imgqueue')
-			#imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_UPSTREAM, self.img_probe_drop)
-			return Gst.PadProbeReturn(1)
-
-
-	#def img_probe_drop(self, pad, buffer):
-	#	return Gst.PadProbeReturn(0)
+			imgqueue = self.pipeline.get_by_name('imgqueue')
+			imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_DOWNSTREAM, self.probe_block)
+			self.tee2.unlink(self.img_pipe)
+			imgqueue.get_static_pad('sink').send_event(Gst.Event.new_eos())
+			return Gst.PadProbeReturn(0)
 
 
 	def take_snapshot(self, widget):
-		location = 'imgout' + str(self.num_snapshots) + '.png'
-		if self.num_snapshots > 0:
-			self.unlink_imgpipe()
+		location = 'imgout' + str(self.num_snapshots) + '.jpeg'
 		self.img_pipe = Gst.parse_bin_from_description(
 			"queue name=imgqueue ! "
-			"h265parse ! "
-			"omxh265dec ! "
 			"nvvidconv ! "
-			"pngenc ! "
+			"jpegenc ! "
 			"filesink name=imgsink location="+location+" async=false",
 			True)
 		if not self.pipeline.add(self.img_pipe):
 			print('img_pipe not added to pipeline')
-		if not self.tee.link(self.img_pipe):
+		if not self.tee2.link(self.img_pipe):
 			print('tee was not linked with img_pipe')
 		self.count = 0
 		imgqueue = self.pipeline.get_by_name('imgqueue')
 		self.img_pipe.set_state(Gst.State.PLAYING)
-		imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.PULL, self.img_probe_block)
+		imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BUFFER, self.img_probe_block)
 		self.num_snapshots += 1
-
-
-	def unlink_imgpipe(self):
-		imgqueue = self.img_pipe.get_by_name('imgqueue')
-		imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_DOWNSTREAM, self.probe_block)
-		self.tee.unlink(self.img_pipe)
-		imgqueue.get_static_pad('sink').send_event(Gst.Event.new_eos())
 
 
 def main():
@@ -209,6 +200,12 @@ def main():
 	pipe = get_recv_pipeline()
 	r = Receiver(pipe)
 	Gtk.main()
+
+
+def get_recv_pipeline():
+	return ("udpsrc address="+ip+" port="+port+" ! application/x-rtp ! rtph265depay ! "
+	"tee name=t ! queue ! h265parse ! omxh265dec ! tee name=t2 ! queue ! nvvidconv ! "
+	"ximagesink name=display")
 
 
 if __name__=='__main__':
