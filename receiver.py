@@ -159,6 +159,11 @@ class Receiver(Gtk.Window):
 		print('Stopped recording')
 
 
+	def probe_block(self, pad, buffer):
+		print('blocked')
+		return True
+
+
 	def take_snapshot(self, widget):
 		print('Snapshot button pressed')
 
