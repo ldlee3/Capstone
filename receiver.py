@@ -137,11 +137,26 @@ class Receiver(Gtk.Window):
 
 
 	def start_recording(self):
-		pass
+		location = 'vidoutput' + str(self.num_recordings) + '.mkv'
+		self.rec_pipe = Gst.parse_bin_from_description(
+				"queue name=vidqueue ! "
+				"h265parse ! "
+				"matroskamux ! "
+				"filesink name=vidsink location="+location+" async=false",
+				True)
+		self.pipeline.add(self.rec_pipe)
+		self.tee.link(self.rec_pipe)
+		self.rec_pipe.set_state(Gst.State.PLAYING)
+		print('Starting Recording...')
+		self.num_recordings += 1
 
 
 	def stop_recording(self):
-		pass
+		vidqueue = self.rec_pipe.get_by_name('vidqueue')
+		vidqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_DOWNSTREAM, self.probe_block)
+		self.tee.unlink(self.rec_pipe)
+		vidqueue.get_static_pad('sink').send_event(Gst.Event.new_eos())
+		print('Stopped recording')
 
 
 	def take_snapshot(self, widget):
