@@ -1,4 +1,5 @@
-# UPDATED: 11/2/2020
+# UPDATED: 11/4/2020
+# DOING: adding handling for multiple streams
 
 # File: receiver.py
 
@@ -42,11 +43,33 @@ class Receiver(Gtk.Window):
 		self.connect("destroy", Gtk.main_quit)
 		self.set_default_size(640, 480)
 
-		# Drawing area for Video Widget
-		self.player_window = Gtk.DrawingArea()
+		# box to hold everything
 		vbox = Gtk.VBox()
 		self.add(vbox)
-		vbox.add(self.player_window)
+
+		# 'Notebook' to use tabs for switching between streams
+		self.stack = Gtk.Stack()
+		self.stack_switcher = Gtk.StackSwitcher()
+		vbox.pack_start(self.stack_switcher, True, True, 0)
+		vbox.pack_start(self.stack, True, True, 0)
+
+		# Window for camera 1
+		self.player_window = Gtk.DrawingArea()
+		self.player_window.set_size_request(640,480)
+		self.stack.add_titled(self.player_window, 'cam1', 'Camera 1')
+
+		# Window for camera 2
+		self.area2 = Gtk.DrawingArea()
+		self.area2.set_size_request(640,480)
+		self.stack.add_titled(self.area2, 'cam2', 'Camera 2')
+
+		# Window for camera 3
+		self.area3 = Gtk.DrawingArea()
+		self.area3.set_size_request(640,480)
+		self.stack.add_titled(self.area3, 'cam3', 'Camera 3')
+
+		# Add the stack to the stack switcher
+		self.stack_switcher.set_stack(self.stack)
 
 		# Add space for buttons
 		hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)

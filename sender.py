@@ -82,7 +82,11 @@ def get_pipeline(machine="", cam=''):
 					'video/x-raw, width=640, height=480 ! '
 					)
 
-	if device_n_caps == None:
+	elif machine == 'file':
+		device_n_caps = ('filesrc location=testvideo0.raw ! videoparse format=4 '
+			'width=640 height=480 framerate=30/1 ! ')
+
+	if device_n_caps is None:
 		device_n_caps = 'videotestsrc ! '
 
 	return (
