@@ -14,7 +14,7 @@ from gi.repository import Gst, GLib, GObject
 
 
 class GstPipeline:
-	def __init__(self, pipeline):
+	def __init__(self):
 		self.frame = None
 		self.running = False
 		self.pipeline = None
@@ -28,7 +28,7 @@ class GstPipeline:
 			print('ERROR: Unable to set the pipeline to the playing state')
 
 
-	def launch_pipeline(self, pipeline)
+	def launch_pipeline(self, pipeline):
 		self.pipeline = Gst.parse_launch(pipeline)
 		bus = self.pipeline.get_bus()
 		bus.add_signal_watch()
