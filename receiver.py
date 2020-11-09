@@ -1,23 +1,31 @@
-# UPDATED: 11/4/2020
-# DOING: adding handling for multiple streams
+# UPDATED: 11/8/2020
+# CHANGE: added multiple (3) streams and radio buttons to switch between the streams.
+#	  Gstreamer input-selector used for switching. The streams are from the same ip
+#	  different ports.
 
 # File: receiver.py
 
 # Contains:
 #   Class
 #	Receiver class - inherits from Gtk.Window, creates a Gtk Window to play the
-#	incoming stream played over udp from ip 192.168.2.0 on port 8080. The window
+#	incoming streams played over udp from ip 192.168.2.0 on port 8080-8082. The window
 #	includes two buttons, one for capturing images and one for recording video.
 #	This is done by linking bins to tees and unlinking when unneeded.
+#	The window also includes 3 radio buttons to switch between the 3 streams.
 #   Functions
 #	get_recv_pipeline() - Gst launch pipeline as a string which receives a stream
 #	from a udpsrc and plays it on ximagesink display. There are two tees in the
-#	pipeline for hooking in the bins for saving images and videos.
+#	pipeline for hooking in the bins for saving images and videos, and three sources
+#	with an input-selector.
 
 
 '''
 Full Receiving Pipeline:
-gst-launch-1.0 udpsrc address=192.168.2.0 port=8080 ! application/x-rtp ! rtph265depay !
+gst-launch-1.0
+udpsrc address=192.168.2.0 port=8080 ! selector. !
+udpsrc address=192.168.2.0 port=8081 ! selector. !
+udpsrc address=192.168.2.0 port=8082 ! selector. !
+input-selector name=selector ! application/x-rtp ! rtph265depay !
 tee name=t ! queue ! h265parse ! omxh265dec ! tee name=t2 ! queue ! nvvidconv ! ximagesink
 t. ! queue ! h265parse ! matroskamux ! filesink location=vidoutput#.mkv async=false
 t2. ! queue ! nvvidconv ! jpegenc ! filesink location=imageout#.jpeg async=false
@@ -33,45 +41,44 @@ gi.require_version('GstVideo', '1.0')
 from gi.repository import GObject, Gst, Gtk, GdkX11, GstVideo
 
 
-ip = '192.168.2.0'
-port = '8080'
-
-
 class Receiver(Gtk.Window):
 	def __init__(self, pipeline):
+		# ===== Gtk GUI Setup ===== #
 		Gtk.Window.__init__(self, title='Livestream')
 		self.connect("destroy", Gtk.main_quit)
 		self.set_default_size(640, 480)
 
 		# box to hold everything
 		vbox = Gtk.VBox()
+		vbox.set_border_width(10)
 		self.add(vbox)
 
-		# 'Notebook' to use tabs for switching between streams
-		self.stack = Gtk.Stack()
-		self.stack_switcher = Gtk.StackSwitcher()
-		vbox.pack_start(self.stack_switcher, True, True, 0)
-		vbox.pack_start(self.stack, True, True, 0)
+		# box to hold radio buttons for switching between streams
+		self.buttonbox = Gtk.Box()
+		vbox.pack_start(self.buttonbox, True, True, 0)
 
-		# Window for camera 1
-		self.player_window = Gtk.DrawingArea()
-		self.player_window.set_size_request(640,480)
-		self.stack.add_titled(self.player_window, 'cam1', 'Camera 1')
+		# area for video player
+		self.window = Gtk.DrawingArea()
+		self.window.set_size_request(640,480)
+		vbox.pack_start(self.window, True, True, 0)
 
-		# Window for camera 2
-		self.area2 = Gtk.DrawingArea()
-		self.area2.set_size_request(640,480)
-		self.stack.add_titled(self.area2, 'cam2', 'Camera 2')
+		# radio button for camera 1
+		self.cam1_button = Gtk.RadioButton.new_with_label_from_widget(None, 'Camera 1')
+		self.cam1_button.connect('toggled', self.on_switch, 'cam1')
+		self.buttonbox.add(self.cam1_button)
 
-		# Window for camera 3
-		self.area3 = Gtk.DrawingArea()
-		self.area3.set_size_request(640,480)
-		self.stack.add_titled(self.area3, 'cam3', 'Camera 3')
+		# radio button for camera 2
+		self.cam2_button = Gtk.RadioButton.new_from_widget(self.cam1_button)
+		self.cam2_button.set_label('Camera 2')
+		self.cam2_button.connect('toggled', self.on_switch, 'cam2')
+		self.buttonbox.add(self.cam2_button)
 
-		# Add the stack to the stack switcher
-		self.stack_switcher.set_stack(self.stack)
+		# radio button for camera 3
+		self.cam3_button = Gtk.RadioButton.new_with_label_from_widget(self.cam1_button, 'Camera 3')
+		self.cam3_button.connect('toggled', self.on_switch, 'cam3')
+		self.buttonbox.add(self.cam3_button)
 
-		# Add space for buttons
+		# Add space for capture buttons
 		hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 		vbox.pack_start(hbox, False, False, 0)
 		hbox.set_border_width(10)
@@ -84,7 +91,7 @@ class Receiver(Gtk.Window):
 		self.button2.connect("clicked", self.take_snapshot)
 		hbox.pack_end(self.button2, False, False, 0)
 
-		# Create GStreamer Receiver Pipeline
+		# ===== Create GStreamer Receiver Pipeline ===== #
 		self.count = 0
 		self.running = False
 		self.num_snapshots = 0
@@ -93,13 +100,18 @@ class Receiver(Gtk.Window):
 		self.rec_pipe = None
 		self.pipeline = None
 		self.launch_pipeline(pipeline)
+		self.selector = self.pipeline.get_by_name('selector')
+		self.selector_sink_pad_1 = self.selector.get_static_pad('sink_0')
+		self.selector_sink_pad_2 = self.selector.get_static_pad('sink_1')
+		self.selector_sink_pad_3 = self.selector.get_static_pad('sink_2')
+		self.selector.set_property('active-pad', self.selector_sink_pad_1)
 		self.tee = self.pipeline.get_by_name('t')
 		self.tee2 = self.pipeline.get_by_name('t2')
 		self.display = self.pipeline.get_by_name('display')
 
-		# Run
+		# ===== Run ===== #
 		self.show_all()
-		self.xid = self.player_window.get_property('window').get_xid()
+		self.xid = self.window.get_property('window').get_xid()
 		self.play()
 
 
@@ -127,8 +139,6 @@ class Receiver(Gtk.Window):
 
 
 	def on_message(self, bus, message):
-		#if message.src.get_name() != 'display':
-		#	print(message.src.get_name(), message.type)
 		t = message.type
 		if t == Gst.MessageType.ERROR:
 			err, dbg = message.parse_error()
@@ -148,6 +158,15 @@ class Receiver(Gtk.Window):
 		if struct_name == 'prepare-window-handle':
 			msg.src.set_property('force-aspect-ratio', True)
 			msg.src.set_window_handle(self.xid)
+
+
+	def on_switch(self, button, cam):
+		if cam == 'cam1':
+			self.selector.set_property('active-pad', self.selector_sink_pad_1)
+		elif cam == 'cam2':
+			self.selector.set_property('active-pad', self.selector_sink_pad_2)
+		else:
+			self.selector.set_property('active-pad', self.selector_sink_pad_3)
 
 
 	def record_button(self, widget):
@@ -185,6 +204,7 @@ class Receiver(Gtk.Window):
 	def probe_block(self, pad, buffer):
 		print('blocked')
 		return True
+
 
 	def img_probe_block(self, pad, buffer):
 		if self.count == 0:
@@ -225,10 +245,13 @@ def main():
 	Gtk.main()
 
 
-def get_recv_pipeline():
-	return ("udpsrc address="+ip+" port="+port+" ! application/x-rtp ! rtph265depay ! "
-	"tee name=t ! queue ! h265parse ! omxh265dec ! tee name=t2 ! queue ! nvvidconv ! "
-	"ximagesink name=display")
+def get_recv_pipeline(ip='192.168.2.0'):
+	return ("udpsrc name=cam1 address="+ip+" port=8080 ! selector. "
+		"udpsrc name=cam2 address="+ip+" port=8081 ! selector. "
+		"udpsrc name=cam3 address="+ip+" port=8082 ! selector. "
+		"input-selector name = selector ! application/x-rtp ! rtph265depay ! "
+		"tee name=t ! queue ! h265parse ! omxh265dec ! "
+		"tee name=t2 ! queue ! nvvidconv ! ximagesink name=display")
 
 
 if __name__=='__main__':

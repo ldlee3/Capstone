@@ -1,4 +1,4 @@
-# UPDATED: 10/21/2020
+# UPDATED: 11/8/2020
 
 # File: sender.py
 
@@ -30,7 +30,7 @@ class Sender(p.GstPipeline):
 
 
 	def connect_sink(self):
-		self.video_sink = self.pipeline.get_by_name('appsink0')
+		self.video_sink = self.pipeline.get_by_name('appsink')
 		self.video_sink.connect('new-sample', self.callback)
 
 
@@ -83,8 +83,10 @@ def get_pipeline(machine="", cam=''):
 					)
 
 	elif machine == 'file':
-		device_n_caps = ('filesrc location=testvideo0.raw ! videoparse format=4 '
-			'width=640 height=480 framerate=30/1 ! ')
+		if cam == "": cam = 'testvideo0'
+		device_n_caps = ('filesrc location=' + cam + '.raw ! videoparse format=4 '
+				 'width=640 height=480 framerate=30/1 ! ')
+
 
 	if device_n_caps is None:
 		device_n_caps = 'videotestsrc ! '
@@ -92,13 +94,11 @@ def get_pipeline(machine="", cam=''):
 	return (
 		device_n_caps + 'videoconvert ! '
 		'video/x-raw, format=(string){RGB} ! '
-		'appsink emit-signals=true max-buffers=1 drop=true'
+		'appsink name=appsink emit-signals=true max-buffers=1 drop=true'
 	)
 
 
-def get_pipeline_out():
-	ip = '192.168.2.0'
-	port = '8080'
+def get_pipeline_out(ip='192.168.2.0', port='8080'):
 	return (
 		"appsrc ! "
 		"video/x-raw, format=BGR ! "
