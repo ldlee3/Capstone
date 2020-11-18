@@ -46,6 +46,7 @@ class Receiver(Gtk.Window):
 		# ===== Gtk GUI Setup ===== #
 		Gtk.Window.__init__(self, title='Livestream')
 		self.connect("destroy", Gtk.main_quit)
+		self.set_resizable(False)
 		self.set_default_size(640, 480)
 
 		# box to hold everything
@@ -251,7 +252,8 @@ def get_recv_pipeline(ip='192.168.2.0'):
 		"udpsrc name=cam3 address="+ip+" port=8082 ! selector. "
 		"input-selector name = selector ! application/x-rtp ! rtph265depay ! "
 		"tee name=t ! queue ! h265parse ! omxh265dec ! "
-		"tee name=t2 ! queue ! nvvidconv ! ximagesink name=display")
+		"tee name=t2 ! queue ! nvvidconv ! videoscale ! "
+		"video/x-raw, width=640, height=480 ! ximagesink name=display")
 
 
 if __name__=='__main__':
