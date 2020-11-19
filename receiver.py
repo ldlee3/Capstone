@@ -59,8 +59,14 @@ class Receiver(Gtk.Window):
 		vbox.pack_start(self.buttonbox, True, True, 0)
 
 		# area for video player
-		self.window = Gtk.DrawingArea()
-		self.window.set_size_request(640,480)
+		self.window = Gtk.Grid()
+		self.area1 = Gtk.DrawingArea()
+		self.area2 = Gtk.DrawingArea()
+		self.window.add(self.area1)
+		self.window.attach(self.area2, 1, 0, 640, 480)
+		#self.window.attach_next_to(self.area3, self.area1, Gtk.PositionType.BOTTOM, 640, 480)
+		#self.window.attach_next_to(self.area4, self.area1, Gtk.PositionType.RIGHT, 640, 480)
+		self.window.set_size_request(1280,480)
 		vbox.pack_start(self.window, True, True, 0)
 
 		# radio button for camera 1
@@ -78,6 +84,11 @@ class Receiver(Gtk.Window):
 		self.cam3_button = Gtk.RadioButton.new_with_label_from_widget(self.cam1_button, 'Camera 3')
 		self.cam3_button.connect('toggled', self.on_switch, 'cam3')
 		self.buttonbox.add(self.cam3_button)
+
+		# radio button for all cameras
+		#self.all_button = Gtk.RadioButton.new_with_label_from_widget(self.cam1_button, 'All Cameras')
+		#self.all_button.connect('toggled', self.on_switch, 'all')
+		#self.buttonbox.add(self.all_button)
 
 		# Add space for capture buttons
 		hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -112,7 +123,7 @@ class Receiver(Gtk.Window):
 
 		# ===== Run ===== #
 		self.show_all()
-		self.xid = self.window.get_property('window').get_xid()
+		self.xid = self.area1.get_property('window').get_xid()
 		self.play()
 
 
@@ -249,11 +260,21 @@ def main():
 def get_recv_pipeline(ip='192.168.2.0'):
 	return ("udpsrc name=cam1 address="+ip+" port=8080 ! selector. "
 		"udpsrc name=cam2 address="+ip+" port=8081 ! selector. "
-		"udpsrc name=cam3 address="+ip+" port=8082 ! selector. "
-		"input-selector name = selector ! application/x-rtp ! rtph265depay ! "
-		"tee name=t ! queue ! h265parse ! omxh265dec ! "
-		"tee name=t2 ! queue ! nvvidconv ! videoscale ! "
-		"video/x-raw, width=640, height=480 ! ximagesink name=display")
+		"input-selector name=selector ! "
+		"application/x-rtp ! rtph265depay ! tee name=t ! "
+		"queue ! h265parse ! omxh265dec ! tee name=t2 ! "
+		"queue ! nvvidconv ! ximagesink name=display "
+		"udpsrc name=cam3 address="+ip+" port=8082 ! "
+		"application/x-rtp ! rtph265depay ! "
+		"h265parse ! omxh265dec ! nvvidconv ! ximagesink")
+
+	#return ("udpsrc name=cam1 address="+ip+" port=8080 ! selector. "
+	#	"udpsrc name=cam2 address="+ip+" port=8081 ! selector. "
+	#	"udpsrc name=cam3 address="+ip+" port=8082 ! selector. "
+	#	"input-selector name = selector ! application/x-rtp ! rtph265depay ! "
+	#	"tee name=t ! queue ! h265parse ! omxh265dec ! "
+	#	"tee name=t2 ! queue ! nvvidconv ! videoscale ! "
+	#	"video/x-raw, width=640, height=480 ! ximagesink name=display")
 
 
 if __name__=='__main__':
