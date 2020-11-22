@@ -4,7 +4,7 @@
 
 # This program starts a Gstreamer pipeline sends it camera frames to OpenCV.
 # OpenCV has the ability to process the video (currently does not) and sends the frames
-# over UDP using ip 192.168.2.0 and port 8080. .
+# over UDP using ip 192.168.2.0 and port 8080.
 
 
 import sys
@@ -22,9 +22,9 @@ import sender
 def main():
 	Gst.init(None)
 
-	cam_pipe = sender.get_pipeline('file', 'testvideo0')
-	cam_pipe2 = sender.get_pipeline('file', 'testvideo1')
-	cam_pipe3 = sender.get_pipeline('file', 'testvideo2')
+	cam_pipe = sender.get_pipeline('tx2', 'cam4')
+	cam_pipe2 = sender.get_pipeline('file', 'testvideo0')
+	cam_pipe3 = sender.get_pipeline('tx2', 'cam3')
 	cam = sender.Sender(cam_pipe)
 	cam2 = sender.Sender(cam_pipe2)
 	cam3 = sender.Sender(cam_pipe3)
@@ -56,7 +56,6 @@ def main():
 		img2 = cv2.cvtColor(frame2, cv2.COLOR_RGB2BGR)
 		frame3 = cam3.get_frame()
 		img3 = cv2.cvtColor(frame3, cv2.COLOR_RGB2BGR)
-
 
 		# Simple Aruco detection
 		#markers = detect_markers(frame)

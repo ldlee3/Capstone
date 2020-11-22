@@ -28,6 +28,13 @@ class GstPipeline:
 			print('ERROR: Unable to set the pipeline to the playing state')
 
 
+	def pause(self):
+		self.running = False
+		stream = self.pipeline.set_state(Gst.State.PAUSE)
+		if stream == Gst.StateChangeReturn.FAILURE:
+			print('ERROR: Unable to set pipeline to paused state')
+
+
 	def launch_pipeline(self, pipeline):
 		self.pipeline = Gst.parse_launch(pipeline)
 		bus = self.pipeline.get_bus()
