@@ -1,7 +1,5 @@
-# UPDATED: 11/8/2020
-# CHANGE: added multiple (3) streams and radio buttons to switch between the streams.
-#	  Gstreamer input-selector used for switching. The streams are from the same ip
-#	  different ports.
+# UPDATED: 11/22/2020
+# CHANGE:
 
 # File: receiver.py
 
@@ -69,35 +67,32 @@ class Receiver(Gtk.Window):
 
 		# box to hold radio buttons for switching between streams
 		self.buttonbox_l = Gtk.Box()
+		self.buttonbox_r = Gtk.Box()
 		vbox_l.pack_start(self.buttonbox_l, False, False, 0)
+		vbox_r.pack_start(self.buttonbox_r, False, False, 0)
 
 		# radio button for camera 1 - left
 		self.cam1_button_l = Gtk.RadioButton.new_with_label_from_widget(None, 'Camera 1')
 		self.cam1_button_l.connect('toggled', self.on_switch_l, 'cam1')
 		self.buttonbox_l.add(self.cam1_button_l)
 
-		# radio button for camera 2 - left
-		self.cam2_button_l = Gtk.RadioButton.new_from_widget(self.cam1_button_l)
-		self.cam2_button_l.set_label('Camera 2')
-		self.cam2_button_l.connect('toggled', self.on_switch_l, 'cam2')
-		self.buttonbox_l.add(self.cam2_button_l)
+		# radio button for camera 3 - left
+		self.cam3_button_l = Gtk.RadioButton.new_from_widget(self.cam1_button_l)
+		self.cam3_button_l.set_label('Camera 3')
+		self.cam3_button_l.connect('toggled', self.on_switch_l, 'cam3')
+		self.buttonbox_l.add(self.cam3_button_l)
 
-		# radio button for camera 3
-		#self.cam3_button = Gtk.RadioButton.new_with_label_from_widget(self.cam1_button, 'Camera 3')
-		#self.cam3_button.connect('toggled', self.on_switch, 'cam3')
-		#self.buttonbox.add(self.cam3_button)
+		# radio button for camera 2 - right
+		self.cam2_button_r = Gtk.RadioButton.new_with_label_from_widget(None, 'Camera 2')
+		self.cam2_button_r.connect('toggled', self.on_switch_r, 'cam2')
+		self.buttonbox_r.add(self.cam2_button_r)
 
-		# radio button for all cameras
-		#self.all_button = Gtk.RadioButton.new_with_label_from_widget(self.cam1_button, 'All Cameras')
-		#self.all_button.connect('toggled', self.on_switch, 'all')
-		#self.buttonbox.add(self.all_button)
-
-		# Add space for capture buttons
+		# Add space for capture buttons - left
 		hbox_l = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 		vbox_l.pack_start(hbox_l, False, False, 0)
 		hbox_l.set_border_width(10)
 
-		# Add Recording and Capture buttons
+		# Add Recording and Capture buttons - left
 		self.button_l_r = Gtk.Button(label="Start Recording")
 		self.button_l_r.connect("clicked", self.record_button_l)
 		hbox_l.pack_start(self.button_l_r, False, False, 0)
@@ -105,19 +100,18 @@ class Receiver(Gtk.Window):
 		self.button_l_c.connect("clicked", self.take_snapshot)
 		hbox_l.pack_end(self.button_l_c, False, False, 0)
 
-		# Add space for capture buttons = Right
+		# Add space for capture buttons - right
 		hbox_r = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 		vbox_r.pack_start(hbox_r, False, False, 0)
 		hbox_r.set_border_width(10)
 
-		# Add Recording and Capture buttons
+		# Add Recording and Capture buttons - right
 		self.button_r_r = Gtk.Button(label="Start Recording")
 		self.button_r_r.connect("clicked", self.record_button_r)
 		hbox_r.pack_start(self.button_r_r, False, False, 0)
 		self.button_r_c = Gtk.Button(label="Take Snapshot")
 		self.button_r_c.connect("clicked", self.take_snapshot)
 		hbox_r.pack_end(self.button_r_c, False, False, 0)
-
 
 		# ===== Create GStreamer Receiver Pipeline ===== #
 		self.count_l = 0
@@ -128,8 +122,12 @@ class Receiver(Gtk.Window):
 		self.img_pipe_r = None
 		self.rec_pipe_l = None
 		self.rec_pipe_r = None
+		self.left_unlinked = False
+		self.right_unlinked = False
 		self.pipeline = None
 		self.launch_pipeline(pipeline)
+		self.left = 'cam1'
+		self.right = 'cam2'
 		self.ql = self.pipeline.get_by_name('ql')
 		self.qr = self.pipeline.get_by_name('qr')
 		self.t_l1 = self.pipeline.get_by_name('t_l1')
@@ -193,10 +191,6 @@ class Receiver(Gtk.Window):
 			else: msg.src.set_window_handle(self.xid_r)
 
 
-	def on_switch_l(self, button, cam):
-		print(cam+' button pressed')
-
-
 	def record_button_l(self, widget):
 		if self.button_l_r.get_label() == 'Start Recording':
 			self.button_l_r.set_label('Stop Recording')
@@ -228,7 +222,7 @@ class Receiver(Gtk.Window):
 			self.t_l1.link(self.rec_pipe)
 			self.rec_pipe_l.set_state(Gst.State.PLAYING)
 		else:
-			self.rec_pipe = Gst.parse_bin_from_description(
+			self.rec_pipe_r = Gst.parse_bin_from_description(
 				"queue name=vidqueue ! "
 				"h265parse ! "
 				"matroskamux ! "
@@ -244,10 +238,13 @@ class Receiver(Gtk.Window):
 	def stop_recording(self, side):
 		if side == 'left':
 			vidqueue = self.rec_pipe_l.get_by_name('vidqueue')
-		else: vidqueue = self.rec_pipe_r.get_by_name('vidqueue')
+		else:
+			vidqueue = self.rec_pipe_r.get_by_name('vidqueue')
 		vidqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_DOWNSTREAM, self.probe_block)
-		if side == 'left': self.t_l1.unlink(self.rec_pipe_l)
-		else: self.t_r1.unlink(self.rec_pipe_r)
+		if side == 'left':
+			self.t_l1.unlink(self.rec_pipe_l)
+		else:
+			self.t_r1.unlink(self.rec_pipe_r)
 		vidqueue.get_static_pad('sink').send_event(Gst.Event.new_eos())
 		print('Stopped recording')
 
@@ -255,6 +252,33 @@ class Receiver(Gtk.Window):
 	def probe_block(self, pad, buffer):
 		print('blocked')
 		return True
+
+
+	def on_switch_l(self, button, cam):
+		print(cam+' button pressed')
+		prev_cam_tee = self.pipeline.get_by_name(self.left)
+
+		# unlink pipe from previous cam
+		self.ql.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_DOWNSTREAM, self.probe_block_ql)
+		prev_cam_tee.unlink(self.ql)
+		self.left_unlinked = True
+
+		# link pipe to new cam
+		new_cam_tee = self.pipeline.get_by_name(cam)
+		new_cam_tee.link(self.ql)
+		self.left_unlinked = False
+		self.left = cam
+
+
+	def probe_block_ql(self, pad, info):
+		if self.left_unlinked:
+			return Gst.PadProbeReturn.REMOVE
+		else:
+			return Gst.PadProbeReturn.DROP
+
+
+	def on_switch_r(self, button, cam):
+		print(cam+' button pressed')
 
 
 	### needs to be updated ###
@@ -299,14 +323,20 @@ def main():
 
 
 def get_recv_pipeline(ip='192.168.2.0'):
-	return ("udpsrc name=cam1 address="+ip+" port=8080 ! "
-		"application/x-rtp ! rtph265depay ! tee name=t_l1 ! "
-		"queue ! h265parse ! omxh265dec ! tee name=t_l2 ! "
-		"queue ! nvvidconv ! ximagesink name=display_l "
-		"udpsrc name=cam2 address="+ip+" port=8081 ! "
-		"application/x-rtp ! rtph265depay ! tee name=t_r1 ! "
-		"queue ! h265parse ! omxh265dec ! tee name=t_r2 ! "
-		"queue ! nvvidconv ! ximagesink name=display_r")
+	return ("udpsrc address="+ip+" port=8080 ! tee name=cam1 ! "
+		"queue name=ql ! application/x-rtp ! rtph265depay ! "
+		"tee name=t_l1 ! queue ! h265parse ! omxh265dec ! "
+		"tee name=t_l2 ! queue ! nvvidconv ! ximagesink name=display_l "
+		"cam1. ! queue ! fakesink async=false "
+
+		"udpsrc address="+ip+" port=8081 ! tee name=cam2 ! "
+		"queue name=qr ! application/x-rtp ! rtph265depay ! "
+		"tee name=t_r1 ! queue ! h265parse ! omxh265dec ! "
+		"tee name=t_r2 ! queue ! nvvidconv ! ximagesink name=display_r "
+		"cam2. ! queue ! fakesink async=false "
+
+		"udpsrc address="+ip+" port=8082 ! tee name=cam3 ! "
+		"queue name=fake_cam3 ! fakesink async=false")
 
 	#return ("udpsrc name=cam1 address="+ip+" port=8080 ! selector. "
 	#	"udpsrc name=cam2 address="+ip+" port=8081 ! selector. "
