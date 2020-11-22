@@ -72,10 +72,12 @@ def get_pipeline(machine=None, cam=None, ip='192.168.2.0', port='8080'):
 	if machine == 'tx2':
 		if cam == 'cam2':
 			device_n_caps = ('v4l2src device=/dev/video1 ! '
-					'video/x-raw, framerate=30/1, width=640, height=480 ! ')
+					'video/x-raw, framerate=30/1, width=640, height=480 ! '
+					)
 		elif cam == 'cam3':	#Stereo Vision 1 (usb-3530000.xhci-2.3)
 			device_n_caps = ('v4l2src device=/dev/video3 ! '
-					'video/x-raw, format=YUY2, width=640, height=480 ! ')
+					'video/x-raw, format=YUY2, width=640, height=480 ! '
+					)
 		elif cam == 'cam4':	#HD USB Camera (usb-3530000.xhci-2.4)
 			device_n_caps = ('v4l2src device=/dev/video4 ! '
 					'video/x-raw, width=640, height=480 ! ')
@@ -89,6 +91,7 @@ def get_pipeline(machine=None, cam=None, ip='192.168.2.0', port='8080'):
 		device_n_caps = 'videotestsrc ! '
 
 	return (device_n_caps +
+		'videoscale ! video/x-raw, width=480, height=360 ! '
 		'nvvidconv ! '
 		'omxh265enc ! '
 		'h265parse ! '
@@ -107,6 +110,6 @@ def run():
 	cam2 = Sender(pipe2)
 	cam2.play()
 
-	pipe3 = get_pipeline('tx2', 'cam3', port='8082')
+	pipe3 = get_pipeline('file', 'testvideo2', port='8082')
 	cam3 = Sender(pipe3)
 	cam3.play()

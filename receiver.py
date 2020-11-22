@@ -45,7 +45,7 @@ class Receiver(Gtk.Window):
 		Gtk.Window.__init__(self, title='Livestream')
 		self.connect("destroy", Gtk.main_quit)
 		self.set_resizable(False)
-		self.set_default_size(1280, 480)
+		self.set_default_size(960, 360)
 
 		# box to hold everything
 		container = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -58,8 +58,8 @@ class Receiver(Gtk.Window):
 		# area for video player
 		self.area_l = Gtk.DrawingArea()
 		self.area_r = Gtk.DrawingArea()
-		self.area_l.set_size_request(640,480)
-		self.area_r.set_size_request(640,480)
+		self.area_l.set_size_request(480,360)
+		self.area_r.set_size_request(480,360)
 		vbox_l.pack_start(self.area_l, False, False, 0)
 		vbox_r.pack_start(self.area_r, False, False, 0)
 		container.pack_start(vbox_l, True, True, 0)
@@ -259,7 +259,7 @@ class Receiver(Gtk.Window):
 		prev_cam_tee = self.pipeline.get_by_name(self.left)
 
 		# unlink pipe from previous cam
-		self.ql.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK_DOWNSTREAM, self.probe_block_ql)
+		self.ql.get_static_pad('src').add_probe(Gst.PadProbeType.BLOCK, self.probe_block_ql)
 		prev_cam_tee.unlink(self.ql)
 		self.left_unlinked = True
 
