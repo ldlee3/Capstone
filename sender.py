@@ -13,8 +13,8 @@
 import sys
 import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst
-
+from gi.repository import Gst, GObject, GLib
+from time import sleep
 
 class Sender():
 	def __init__(self, pipeline):
@@ -23,14 +23,12 @@ class Sender():
 		self.launch_pipeline(pipeline)
 		#self.play()
 
-
 	def play(self):
 		self.running = True
 		stream = self.pipeline.set_state(Gst.State.PLAYING)
 		print('Set to playing')
 		if stream ==  Gst.StateChangeReturn.FAILURE:
 			print('ERROR: Unable to set the pipeline to the playing state')
-
 
 	def pause(self):
 		self.running = False
@@ -39,13 +37,13 @@ class Sender():
 		if stream == Gst.StateChangeReturn.FAILURE:
 			print('ERROR: Unable to set pipeline to paused state')
 
-
 	def launch_pipeline(self, pipeline):
 		self.pipeline = Gst.parse_launch(pipeline)
 		bus = self.pipeline.get_bus()
 		bus.add_signal_watch()
 		bus.connect('message', self.on_message)
-
+		global ref
+		ref+=1
 
 	def on_message(self, bus, message):
 		t = message.type
@@ -58,14 +56,15 @@ class Sender():
 			print('End-Of-Stream reached')
 			self._shutdown()
 		else:
-		       print('ERROR: Unexpected message received')
+		       pass#print('ERROR: Unexpected message received')
 		return True
-
 
 	def _shutdown(self):
 		print('Shutting down pipeline')
 		self.pipeline.bus.remove_signal_watch()
 		self.pipeline.set_state(Gst.State.NULL)
+		global ref
+		ref-=1
 
 
 def get_pipeline(machine=None, cam=None, ip='192.168.2.0', port='8080'):
@@ -99,17 +98,29 @@ def get_pipeline(machine=None, cam=None, ip='192.168.2.0', port='8080'):
 		'udpsink host=' + ip + ' port=' + port)
 
 
-
 def run():
+	GObject.threads_init()
 	Gst.init(None)
-	pipe = get_pipeline('file', 'testvideo1', port='8080')
+
+	#pipe = get_pipeline('file', 'testvideo1', port='8080')
+	pipe = get_pipeline('tx2', 'cam2', port='8080')
 	cam = Sender(pipe)
 	cam.play()
 
-	pipe2 = get_pipeline('file', 'testvideo0', port='8081')
+	#pipe2 = get_pipeline('file', 'testvideo0', port='8081')
+	pipe2 = get_pipeline('tx2', 'cam3', port='8081')
 	cam2 = Sender(pipe2)
 	cam2.play()
 
 	pipe3 = get_pipeline('file', 'testvideo2', port='8082')
+	#pipe3 = get_pipeline('tx2', 'cam4', port='8082')
 	cam3 = Sender(pipe3)
 	cam3.play()
+
+	GLib.MainLoop().run()
+	#while ref>0: sleep(0.5)
+
+
+if __name__=="__main__":
+	ref=0
+	run()
