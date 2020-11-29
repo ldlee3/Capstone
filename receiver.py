@@ -47,7 +47,7 @@ class Receiver(Gtk.Window):
 	def __init__(self, pipeline):
 		# ===== Gtk GUI Setup ===== #
 		Gtk.Window.__init__(self, title='Livestream')
-		self.connect("destroy", Gtk.main_quit)
+		self.connect("destroy", lambda a=None,b=None: self._shutdown())
 		self.set_resizable(False)
 		self.set_default_size(640, 480)
 
@@ -110,8 +110,8 @@ class Receiver(Gtk.Window):
 		self.selector_sink_pad_3 = self.selector.get_static_pad('sink_2')
 		self.selector.set_property('active-pad', self.selector_sink_pad_1)
 		self.active_cam="cam1"
-		sserv_sendcmd(self.active_cam+" up")
 		camv_lock.acquire()
+		if camv[self.active_cam]==0: sserv_sendcmd(self.active_cam+" up")
 		camv[self.active_cam]+=1
 		camv_lock.release()
 		self.tee = self.pipeline.get_by_name('t')
@@ -145,7 +145,10 @@ class Receiver(Gtk.Window):
 		self.pipeline.bus.remove_signal_watch()
 		self.pipeline.set_state(Gst.State.NULL)
 		Gtk.main_quit()
-
+		camv_lock.acquire()
+		camv[self.active_cam]-=1
+		if camv[self.active_cam]==0: sserv_sendcmd(self.active_cam+" down")
+		camv_lock.release()
 
 	def on_message(self, bus, message):
 		t = message.type
