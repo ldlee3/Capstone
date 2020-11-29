@@ -33,6 +33,8 @@ t2. ! queue ! nvvidconv ! jpegenc ! filesink location=imageout#.jpeg async=false
 
 
 import sys
+import socket
+import threading
 import gi
 gi.require_version('Gst', '1.0')
 gi.require_version('Gtk', '3.0')
@@ -93,6 +95,7 @@ class Receiver(Gtk.Window):
 		hbox.pack_end(self.button2, False, False, 0)
 
 		# ===== Create GStreamer Receiver Pipeline ===== #
+		global camv,camv_lock
 		self.count = 0
 		self.running = False
 		self.num_snapshots = 0
@@ -106,6 +109,11 @@ class Receiver(Gtk.Window):
 		self.selector_sink_pad_2 = self.selector.get_static_pad('sink_1')
 		self.selector_sink_pad_3 = self.selector.get_static_pad('sink_2')
 		self.selector.set_property('active-pad', self.selector_sink_pad_1)
+		self.active_cam="cam1"
+		sserv_sendcmd(self.active_cam+" up")
+		camv_lock.acquire()
+		camv[self.active_cam]+=1
+		camv_lock.release()
 		self.tee = self.pipeline.get_by_name('t')
 		self.tee2 = self.pipeline.get_by_name('t2')
 		self.display = self.pipeline.get_by_name('display')
@@ -162,13 +170,21 @@ class Receiver(Gtk.Window):
 
 
 	def on_switch(self, button, cam):
-		if cam == 'cam1':
-			self.selector.set_property('active-pad', self.selector_sink_pad_1)
-		elif cam == 'cam2':
-			self.selector.set_property('active-pad', self.selector_sink_pad_2)
-		else:
-			self.selector.set_property('active-pad', self.selector_sink_pad_3)
-
+		global camv,camv_lock
+		if cam!=self.active_cam:
+			if cam == 'cam1':
+				self.selector.set_property('active-pad', self.selector_sink_pad_1)
+			elif cam == 'cam2':
+				self.selector.set_property('active-pad', self.selector_sink_pad_2)
+			else:
+				self.selector.set_property('active-pad', self.selector_sink_pad_3)
+			camv_lock.acquire()
+			if camv[cam]==0: sserv_sendcmd(cam+" up")
+			camv[cam]+=1
+			camv[self.active_cam]-=1
+			if camv[self.active_cam]==0: sserv_sendcmd(self.active_cam+" down")
+			self.active_cam=cam
+			camv_lock.release()
 
 	def record_button(self, widget):
 		if self.button.get_label() == 'Start Recording':
@@ -237,14 +253,26 @@ class Receiver(Gtk.Window):
 		imgqueue.get_static_pad('src').add_probe(Gst.PadProbeType.BUFFER, self.img_probe_block)
 		self.num_snapshots += 1
 
+def sserv_sendcmd(cmd):
+	global srv_ip,srv_port
+	sock=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+	sock.connect((srv_ip,srv_port))
+	sock.send(cmd.encode("ascii")+b'\n')
+	sock.close()
 
 def main():
+	global srv_ip,srv_port
+	global camv,camv_lock
+	ip="192.168.2.0"#local address
+	srv_ip="192.168.2.0"#sender ip
+	srv_port=9990
+	camv={"cam1":0,"cam2":0,"cam3":0}
+	camv_lock=threading.Lock()
 	GObject.threads_init()
 	Gst.init(None)
-	pipe = get_recv_pipeline()
+	pipe = get_recv_pipeline(ip=ip)
 	r = Receiver(pipe)
 	Gtk.main()
-
 
 def get_recv_pipeline(ip='192.168.2.0'):
 	return ("udpsrc name=cam1 address="+ip+" port=8080 ! selector. "
