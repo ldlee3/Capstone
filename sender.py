@@ -36,7 +36,7 @@ class Sender():
 
 	def pause(self):
 		self.running = False
-		stream = self.pipeline.set_state(Gst.State.PAUSED)
+		stream = self.pipeline.set_state(Gst.State.NULL)#PAUSED)
 		print('Pipeline paused')
 		if stream == Gst.StateChangeReturn.FAILURE:
 			print('ERROR: Unable to set pipeline to paused state')
@@ -72,13 +72,13 @@ class Sender():
 
 def get_pipeline(machine=None, cam=None, ip="127.0.0.1", port='8080'):
 	if machine == 'tx2':
-		if cam == 'cam2':
+		if cam == 'cam1':
 			device_n_caps = ('v4l2src device=/dev/video1 ! '
 					'video/x-raw, framerate=30/1, width=640, height=480 ! ')
-		elif cam == 'cam3':	#Stereo Vision 1 (usb-3530000.xhci-2.3)
+		elif cam == 'cam2':	#Stereo Vision 1 (usb-3530000.xhci-2.3)
 			device_n_caps = ('v4l2src device=/dev/video3 ! '
 					'video/x-raw, format=YUY2, width=640, height=480 ! ')
-		elif cam == 'cam4':	#HD USB Camera (usb-3530000.xhci-2.4)
+		elif cam == 'cam3':	#HD USB Camera (usb-3530000.xhci-2.4)
 			device_n_caps = ('v4l2src device=/dev/video4 ! '
 					'video/x-raw, width=640, height=480 ! ')
 
@@ -92,7 +92,7 @@ def get_pipeline(machine=None, cam=None, ip="127.0.0.1", port='8080'):
 
 	return (device_n_caps +
 		'nvvidconv ! '
-		'omxh265enc iframeinterval=15 ! '
+		'omxh265enc iframeinterval=5 ! '
 		'rtph265pay ! '
 		'udpsink host=' + ip + ' port=' + port)
 
@@ -142,8 +142,8 @@ def run():
 	
 	global camv
 	camv={}
-	camv["cam1"]=Sender(get_pipeline('file', 'testvideo1', ip=ip, port='8080'))
-	camv["cam2"]=Sender(get_pipeline('file', 'testvideo0', ip=ip, port='8081'))
+	camv["cam1"]=Sender(get_pipeline('tx2', 'cam1', ip=ip, port='8080'))
+	camv["cam2"]=Sender(get_pipeline('tx2', 'cam2', ip=ip, port='8081'))
 	camv["cam3"]=Sender(get_pipeline('tx2', 'cam3', ip=ip, port='8082'))
 	#for c in camv: camv[c].play()
 	

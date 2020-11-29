@@ -182,10 +182,10 @@ class Receiver(Gtk.Window):
 			else:
 				self.selector.set_property('active-pad', self.selector_sink_pad_3)
 			camv_lock.acquire()
-			if camv[cam]==0: sserv_sendcmd(cam+" up")
-			camv[cam]+=1
 			camv[self.active_cam]-=1
 			if camv[self.active_cam]==0: sserv_sendcmd(self.active_cam+" down")
+			if camv[cam]==0: sserv_sendcmd(cam+" up")
+			camv[cam]+=1
 			self.active_cam=cam
 			camv_lock.release()
 
