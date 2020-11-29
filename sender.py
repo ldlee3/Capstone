@@ -1,4 +1,8 @@
-# UPDATED: 11/18/2020
+# UPDATED: 11/28/2020
+# CHANGES: pause function changes state to NULL (as opposed to PAUSED). PAUSED state doesn't
+#	   allow the third webcam to turn on. GLib mainloop added to fix immediate shutdown
+#	   issue. Timeoverlay added to test image captures.
+
 
 # File: sender.py
 
@@ -13,7 +17,8 @@
 import sys
 import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst
+from gi.repository import Gst, GObject, GLib
+from time import sleep
 
 
 class Sender():
@@ -23,29 +28,27 @@ class Sender():
 		self.launch_pipeline(pipeline)
 		#self.play()
 
-
 	def play(self):
 		self.running = True
 		stream = self.pipeline.set_state(Gst.State.PLAYING)
-		print('Set to playing')
 		if stream ==  Gst.StateChangeReturn.FAILURE:
 			print('ERROR: Unable to set the pipeline to the playing state')
-
+		else: print('Set to playing')
 
 	def pause(self):
 		self.running = False
-		stream = self.pipeline.set_state(Gst.State.PAUSE)
-		print('Pipeline paused')
+		stream = self.pipeline.set_state(Gst.State.NULL)
 		if stream == Gst.StateChangeReturn.FAILURE:
 			print('ERROR: Unable to set pipeline to paused state')
-
+		else: print('Pipeline paused')
 
 	def launch_pipeline(self, pipeline):
 		self.pipeline = Gst.parse_launch(pipeline)
 		bus = self.pipeline.get_bus()
 		bus.add_signal_watch()
 		bus.connect('message', self.on_message)
-
+		global ref
+		ref+=1
 
 	def on_message(self, bus, message):
 		t = message.type
@@ -58,24 +61,27 @@ class Sender():
 			print('End-Of-Stream reached')
 			self._shutdown()
 		else:
-		       print('ERROR: Unexpected message received')
+		       pass #print('ERROR: Unexpected message received')
 		return True
-
 
 	def _shutdown(self):
 		print('Shutting down pipeline')
 		self.pipeline.bus.remove_signal_watch()
 		self.pipeline.set_state(Gst.State.NULL)
+		global ref
+		ref-=1
 
 
 def get_pipeline(machine=None, cam=None, ip='192.168.2.0', port='8080'):
 	if machine == 'tx2':
 		if cam == 'cam2':
 			device_n_caps = ('v4l2src device=/dev/video1 ! '
-					'video/x-raw, framerate=30/1, width=640, height=480 ! ')
+					'video/x-raw, framerate=30/1, width=640, height=480 ! '
+					)
 		elif cam == 'cam3':	#Stereo Vision 1 (usb-3530000.xhci-2.3)
 			device_n_caps = ('v4l2src device=/dev/video3 ! '
-					'video/x-raw, format=YUY2, width=640, height=480 ! ')
+					'video/x-raw, format=YUY2, width=640, height=480 ! '
+					)
 		elif cam == 'cam4':	#HD USB Camera (usb-3530000.xhci-2.4)
 			device_n_caps = ('v4l2src device=/dev/video4 ! '
 					'video/x-raw, width=640, height=480 ! ')
@@ -89,24 +95,39 @@ def get_pipeline(machine=None, cam=None, ip='192.168.2.0', port='8080'):
 		device_n_caps = 'videotestsrc ! '
 
 	return (device_n_caps +
+		'videoscale ! video/x-raw, width=480, height=360 ! '
+		'timeoverlay ! '
 		'nvvidconv ! '
-		'omxh265enc ! '
-		'h265parse ! '
+		'omxh265enc iframeinterval=10 ! '
 		'rtph265pay ! '
 		'udpsink host=' + ip + ' port=' + port)
 
 
-
 def run():
+	GObject.threads_init()
 	Gst.init(None)
+
 	pipe = get_pipeline('file', 'testvideo1', port='8080')
+	#pipe = get_pipeline('tx2', 'cam2', port='8080')
 	cam = Sender(pipe)
 	cam.play()
 
 	pipe2 = get_pipeline('file', 'testvideo0', port='8081')
+	#pipe2 = get_pipeline('tx2', 'cam3', port='8081')
 	cam2 = Sender(pipe2)
 	cam2.play()
+	#sleep(0.5)
+	#cam2.pause()
 
-	pipe3 = get_pipeline('tx2', 'cam3', port='8082')
+	pipe3 = get_pipeline('file', 'testvideo2', port='8082')
+	#pipe3 = get_pipeline('tx2', 'cam4', port='8082')
 	cam3 = Sender(pipe3)
 	cam3.play()
+
+	GLib.MainLoop().run()
+	#while ref>0: sleep(0.5)
+
+
+if __name__=="__main__":
+	ref=0
+	run()
