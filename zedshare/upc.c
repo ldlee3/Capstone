@@ -90,23 +90,24 @@ void upc_log(struct upc_inst *upc_data, const char *msg)
 	time_t tm;
 	
 	tm=time(NULL);
-	pthread_mutex_lock(&(cli->inst->mtx_log));
-	msglen=snprintf(buf,UPC_PATHPAD,"[ld] ",(long)tm);
+	pthread_mutex_lock(&(upc_data->mtx_log));
+	msglen=snprintf(buf,UPC_PATHPAD,"[%ld] ",(long)tm);
+	msgcur=0;
 	while((msgcur+=(msgwr=write(upc_data->logfd,buf+msgcur,msglen-msgcur)))<msglen) if(msgwr<0){
-		pthread_mutex_unlock(&(cli->inst->mtx_log));
+		pthread_mutex_unlock(&(upc_data->mtx_log));
 		return;
 	}msglen=strlen(msg);
 	msgcur=0;
 	while((msgcur+=(msgwr=write(upc_data->logfd,msg+msgcur,msglen-msgcur)))<msglen) if(msgwr<0){
-		pthread_mutex_unlock(&(cli->inst->mtx_log));
+		pthread_mutex_unlock(&(upc_data->mtx_log));
 		return;
 	}strcpy(buf,"\n");
 	msglen=2;
 	msgcur=0;
 	while((msgcur+=(msgwr=write(upc_data->logfd,msg+msgcur,msglen-msgcur)))<msglen) if(msgwr<0){
-		pthread_mutex_unlock(&(cli->inst->mtx_log));
+		pthread_mutex_unlock(&(upc_data->mtx_log));
 		return;
-	}pthread_mutex_unlock(&(cli->inst->mtx_log));
+	}pthread_mutex_unlock(&(upc_data->mtx_log));
 }
 
 char *upc_sendcmd(const char *root, const char *dest, const char *cmd)
@@ -167,7 +168,7 @@ char *upc_sendcmd(const char *root, const char *dest, const char *cmd)
 	}
 	
 	buflen=bufcur=0;
-	if((buf=malloc((bufsz=1)*UPC_MSGBLK))==NULL){
+	if((buf=(char*)malloc((bufsz=1)*UPC_MSGBLK))==NULL){
 		//error
 		close(cmdsock);
 		return NULL;
@@ -182,7 +183,7 @@ char *upc_sendcmd(const char *root, const char *dest, const char *cmd)
 			close(cmdsock);
 			return buf;
 		}bufsz=buflen/UPC_MSGBLK+1;
-		if((buf=realloc(buf,bufsz*UPC_MSGBLK))==NULL){
+		if((buf=(char*)realloc(buf,bufsz*UPC_MSGBLK))==NULL){
 			//error
 			pthread_exit(NULL);
 		}
@@ -257,13 +258,13 @@ void *upc_cmdh(struct upc_cli *cli)
 			while((rspcur+=(rspwr=write(cli->sock,reply+rspcur,rsplen-rspcur)))<rsplen) if(rspwr<0){
 				//error
 				pthread_exit(NULL);
-			}//free(reply);//prevents use of statically allocated strings, reconsider approach?
+			}free(reply);//prevents use of statically allocated strings, reconsider approach?
 			
 			memmove(cli->buf,cli->buf+bufcur,cli->buflen-bufcur);
 			cli->buflen-=bufcur;
 			bufcur=0;
 		}cli->bufsz=cli->buflen/UPC_MSGBLK+1;
-		if((cli->buf=realloc(cli->buf,cli->bufsz*UPC_MSGBLK))==NULL){
+		if((cli->buf=(char*)realloc(cli->buf,cli->bufsz*UPC_MSGBLK))==NULL){
 			//error
 			pthread_exit(NULL);
 		}
