@@ -81,6 +81,22 @@ class Receiver(Gtk.Window):
 		self.cam3_button.connect('toggled', self.on_switch, 'cam3')
 		self.buttonbox.add(self.cam3_button)
 
+
+		# radio button for cvz 1
+		self.camz1_button = Gtk.RadioButton.new_with_label_from_widget(self.cam1_button, 'CVZ 1')
+		self.camz1_button.connect('toggled', self.on_switch, 'camz1')
+		self.buttonbox.add(self.camz1_button)
+
+		# radio button for cvz 1
+		self.camz2_button = Gtk.RadioButton.new_with_label_from_widget(self.cam1_button, 'CVZ 2')
+		self.camz2_button.connect('toggled', self.on_switch, 'camz2')
+		self.buttonbox.add(self.camz2_button)
+
+		# radio button for cvz 3
+		self.camz3_button = Gtk.RadioButton.new_with_label_from_widget(self.cam1_button, 'CVZ 3')
+		self.camz3_button.connect('toggled', self.on_switch, 'camz3')
+		self.buttonbox.add(self.camz3_button)
+
 		# Add space for capture buttons
 		hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
 		vbox.pack_start(hbox, False, False, 0)
@@ -108,6 +124,9 @@ class Receiver(Gtk.Window):
 		self.selector_sink_pad_1 = self.selector.get_static_pad('sink_0')
 		self.selector_sink_pad_2 = self.selector.get_static_pad('sink_1')
 		self.selector_sink_pad_3 = self.selector.get_static_pad('sink_2')
+		self.selector_sink_pad_4 = self.selector.get_static_pad('sink_3')
+		self.selector_sink_pad_5 = self.selector.get_static_pad('sink_4')
+		self.selector_sink_pad_6 = self.selector.get_static_pad('sink_5')
 		self.selector.set_property('active-pad', self.selector_sink_pad_1)
 		self.active_cam="cam1"
 		camv_lock.acquire()
@@ -175,12 +194,15 @@ class Receiver(Gtk.Window):
 	def on_switch(self, button, cam):
 		global camv,camv_lock
 		if cam!=self.active_cam:
-			if cam == 'cam1':
-				self.selector.set_property('active-pad', self.selector_sink_pad_1)
-			elif cam == 'cam2':
-				self.selector.set_property('active-pad', self.selector_sink_pad_2)
+			if cam == 'cam1': self.selector.set_property('active-pad', self.selector_sink_pad_1)
+			elif cam == 'cam2': self.selector.set_property('active-pad', self.selector_sink_pad_2)
+			elif cam == 'cam3': self.selector.set_property('active-pad', self.selector_sink_pad_3)
+			elif cam == 'camz1': self.selector.set_property('active-pad', self.selector_sink_pad_4)
+			elif cam == 'camz2': self.selector.set_property('active-pad', self.selector_sink_pad_5)
+			elif cam == 'camz3': self.selector.set_property('active-pad', self.selector_sink_pad_6)
 			else:
-				self.selector.set_property('active-pad', self.selector_sink_pad_3)
+				self.selector.set_property('active-pad', self.selector_sink_pad_1)
+				cam="cam1"
 			camv_lock.acquire()
 			camv[self.active_cam]-=1
 			if camv[self.active_cam]==0: sserv_sendcmd(self.active_cam+" down")
@@ -266,10 +288,10 @@ def sserv_sendcmd(cmd):
 def main():
 	global srv_ip,srv_port
 	global camv,camv_lock
-	ip="192.168.2.0"#local address
-	srv_ip="192.168.2.0"#sender ip
+	ip="192.168.0.101"#local address
+	srv_ip="192.168.0.101"#sender ip
 	srv_port=9990
-	camv={"cam1":0,"cam2":0,"cam3":0}
+	camv={"cam1":0,"cam2":0,"cam3":0,"camz1":0,"camz2":0,"camz3":0}
 	camv_lock=threading.Lock()
 	GObject.threads_init()
 	Gst.init(None)
@@ -277,10 +299,13 @@ def main():
 	r = Receiver(pipe)
 	Gtk.main()
 
-def get_recv_pipeline(ip='192.168.2.0'):
+def get_recv_pipeline(ip='192.168.1.101'):
 	return ("udpsrc name=cam1 address="+ip+" port=8080 ! selector. "
 		"udpsrc name=cam2 address="+ip+" port=8081 ! selector. "
 		"udpsrc name=cam3 address="+ip+" port=8082 ! selector. "
+		"udpsrc name=camz1 address="+ip+" port=8090 ! selector. "
+		"udpsrc name=camz2 address="+ip+" port=8091 ! selector. "
+		"udpsrc name=camz3 address="+ip+" port=8092 ! selector. "
 		"input-selector name = selector ! application/x-rtp ! rtph265depay ! "
 		"tee name=t ! queue ! h265parse ! omxh265dec ! "
 		"tee name=t2 ! queue ! nvvidconv ! videoscale ! "

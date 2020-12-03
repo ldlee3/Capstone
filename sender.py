@@ -10,13 +10,44 @@
 #	run() - to run the pipelines
 
 
+import os
 import sys
+import mmap
+import posix_ipc
+import numpy as np
+import cv2
 import socket
 import threading
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GObject, GLib
 from time import sleep
+
+import traceback
+
+buf_w=1280
+buf_h=720
+buf_d=4
+buf_sz=buf_w*buf_h*buf_d
+
+upcroot="/home/nvidia/roverupc/"
+
+shm2cmdname={
+	"shm_zedleft":b"left",
+	"shm_zedright":b"right",
+	"shm_zeddepth":b"depth",
+	"shm_cvsobel":b"sobel",
+}
+
+#shm_l=posix_ipc.SharedMemory("shm_zedleft",read_only=True)
+#memm_l=mmap.mmap(shm_l.fd,buf_sz,flags=mmap.MAP_SHARED,prot=mmap.PROT_READ)
+#csock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+
+#csock.connect(upcroot+"comm/cvzshare.sock")
+
+#csock.send(b"set left up\0")
+#reply=csock.recv(64)
+#print(reply)
 
 class Sender():
 	def __init__(self, pipeline):
@@ -29,17 +60,17 @@ class Sender():
 	def play(self):
 		self.running = True
 		stream = self.pipeline.set_state(Gst.State.PLAYING)
-		print('Set to playing')
 		if stream ==  Gst.StateChangeReturn.FAILURE:
 			print('ERROR: Unable to set the pipeline to the playing state')
+		else: print('Set to playing')
 
 
 	def pause(self):
 		self.running = False
-		stream = self.pipeline.set_state(Gst.State.NULL)#PAUSED)
-		print('Pipeline paused')
+		stream = self.pipeline.set_state(Gst.State.NULL) #PAUSED)
 		if stream == Gst.StateChangeReturn.FAILURE:
 			print('ERROR: Unable to set pipeline to paused state')
+		else: print('Pipeline paused')
 
 
 	def launch_pipeline(self, pipeline):
@@ -60,7 +91,7 @@ class Sender():
 			print('End-Of-Stream reached')
 			self._shutdown()
 		else:
-		       print('ERROR: Unexpected message received')
+		       pass #print('ERROR: Unexpected message received')
 		return True
 
 
@@ -68,6 +99,70 @@ class Sender():
 		print('Shutting down pipeline')
 		self.pipeline.bus.remove_signal_watch()
 		self.pipeline.set_state(Gst.State.NULL)
+
+
+class cvzSender(Sender):
+	def __init__(self, pipeline, shmname):
+		global upcroot,shm2cmdname,buf_sz
+		self.shmname=shmname
+		self.shm=posix_ipc.SharedMemory(self.shmname,read_only=True)
+		self.memm=mmap.mmap(self.shm.fd,buf_sz,flags=mmap.MAP_SHARED,prot=mmap.PROT_READ)
+		self.csock=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+		self.csock.connect(upcroot+"comm/cvzshare.sock")
+		self.csock.send(b"set %s up\0"%shm2cmdname[self.shmname])
+		self.lframe=0
+		reply=self.csock.recv(64)
+		#print(reply)
+		super().__init__(pipeline)
+	
+	def __del__(self):
+		print("cvz del")
+		self.csock.send(b'set %s down\0'%shm2cmdname[self.shmname])
+		reply=self.csock.recv(64)
+		self.csock.close()
+		self.memm.close()
+		self.shm.close_fd()
+
+	def need_data(self, src, len):
+		#print('need data')
+		self.push(src)
+
+
+	def push(self, src):
+		global buf_sz,shm2cmdname
+		#while self.running:
+		try:
+			self.csock.send(b"read %s lock\0"%shm2cmdname[self.shmname])
+			reply=self.csock.recv(64).strip(b'\0').decode("ascii")
+			#print(reply)
+			fnum=int(reply[4:])
+			dat=self.memm.read(buf_sz)
+			self.memm.seek(0)
+		finally:
+			self.csock.send(b"read %s release\0"%shm2cmdname[self.shmname])
+			reply=self.csock.recv(64).strip(b'\0').decode("ascii")
+			#print(reply)
+		try:
+			#if fnum!=fnumlast:
+			self.lframe=fnum
+			#npdat=np.frombuffer(dat,dtype=np.ubyte)
+			#frame_l=npdat.reshape(buf_h,buf_w,buf_d)
+			frame_l=Gst.Buffer.new_wrapped(dat)
+			#fcaps=Gst.Caps.from_string("video/x-raw,format=RGBA,width=1280,height=720")
+			#src.emit('push-sample',Gst.Sample(frame_l,fcaps,None,None))
+			src.emit('push-buffer',frame_l)
+			#print('pushed')
+		except:
+			pass
+			#print('except:')
+			traceback.print_exc()
+			#break
+
+
+	def connect_src(self):
+		source = self.pipeline.get_by_name('appsrc')
+		source.connect('need-data', self.need_data)
+
 
 
 def get_pipeline(machine=None, cam=None, ip="127.0.0.1", port='8080'):
@@ -96,6 +191,17 @@ def get_pipeline(machine=None, cam=None, ip="127.0.0.1", port='8080'):
 		'rtph265pay ! '
 		'udpsink host=' + ip + ' port=' + port)
 
+
+def get_zed(ip="127.0.0.1", port="8090"):
+	return ('appsrc name=appsrc format=3 caps="video/x-raw,width=1280,height=720,format=RGBA" emit-signals=true is-live=true ! '
+		'video/x-raw, format=RGBA, width=1280, height=720, framerate=30/1 ! '
+		'videoscale ! video/x-raw, width=640, height=480 ! '
+		#'ximagesink')
+		'nvvidconv ! omxh265enc ! video/x-h265 ! rtph265pay ! '
+		'udpsink host=' + ip + ' port=' + port)
+
+
+
 def sserv_loop():
 	global camv
 	print("control server up")
@@ -120,6 +226,7 @@ def sserv_loop():
 def sserv_init(ip,port):
 	global ssock,sthread
 	ssock=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+	ssock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
 	ssock.bind((ip,port))
 	ssock.listen()
 	sthread=threading.Thread(target=sserv_loop)
@@ -135,8 +242,8 @@ def sserv_stop():
 		sthread.join()
 
 def run():
-	ip="192.168.2.0"
-	
+	ip="192.168.0.101"
+
 	GObject.threads_init()
 	Gst.init(None)
 	
@@ -145,6 +252,16 @@ def run():
 	camv["cam1"]=Sender(get_pipeline('tx2', 'cam1', ip=ip, port='8080'))
 	camv["cam2"]=Sender(get_pipeline('tx2', 'cam2', ip=ip, port='8081'))
 	camv["cam3"]=Sender(get_pipeline('tx2', 'cam3', ip=ip, port='8082'))
+
+	zedcam = cvzSender(get_zed(ip=ip, port='8090'),"shm_zedleft")
+	zedcam.connect_src()
+	camv["camz1"]=zedcam
+	zedcam2 = cvzSender(get_zed(ip=ip, port='8091'),"shm_zeddepth")
+	zedcam2.connect_src()
+	camv["camz2"]=zedcam2
+	zedcam3 = cvzSender(get_zed(ip=ip, port='8092'),"shm_cvsobel")
+	zedcam3.connect_src()
+	camv["camz3"]=zedcam3
 	#for c in camv: camv[c].play()
 	
 	sserv_init(ip,9990)
@@ -153,5 +270,10 @@ def run():
 	except KeyboardInterrupt: pass
 	
 	sserv_stop()
+	
+	#csock.send(b'set left down')
+	#csock.close()
+	#memm_l.close()
+	#shm_l.close_fd()
 
 if __name__=="__main__": run()
