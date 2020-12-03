@@ -1,7 +1,7 @@
 
 
 CC=g++
-CFLAGS=-Wall -O3 -std=c++0x
+CFLAGS=-O3 -std=c++0x -Wall
 LFLAGS=-Wl,-rpath,/usr/local/cuda/lib64:/usr/local/zed/lib:/usr/local/lib
 INCL=-I/usr/local/cuda/include -I/usr/local/zed/include -I/usr/local/include/opencv -isystem /usr/local/include
 SLIB=-L/usr/local/cuda/lib64 -L/usr/local/zed/lib -L/usr/local/lib
@@ -26,4 +26,8 @@ CVZShare: cvz.o upc.o shmbuf.o
 	$(CC) -o CVZShare cvz.o upc.o shmbuf.o $(SLIB) -rdynamic $(DLIB) $(LFLAGS)
 
 clean:
-	rm CVZShare cvz.o upc.o shmbuf.o
+	rm CVZShare cvz.o upc.o shmbuf.o CVZView cvzview.o
+
+crashclean: CVZView
+	unlink /home/nvidia/roverupc/comm/cvzshare.sock
+	./CVZView

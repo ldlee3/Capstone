@@ -67,7 +67,7 @@ int main(int argc, char **argv)
 		close(shm);
 		return 1;
 	}free(reply);
-	struct timespec fdel;
+	//struct timespec fdel;
 	while(flag){
 		strcpy(cmdbuf,"read "); strcat(cmdbuf,shmname); strcat(cmdbuf," lock");
 		if((reply=upc_sendcmd("/home/nvidia/roverupc","cvzshare",cmdbuf))==NULL) break;
@@ -102,5 +102,4 @@ int main(int argc, char **argv)
 	
 	munmap(shm_map,bufsz);
 	close(shm);
-	//shm_unlink(argv[1]);
 }

@@ -4,6 +4,7 @@
 #include <semaphore.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "shmbuf.h"
@@ -52,8 +53,9 @@ int shmbuf_init(struct shmbuf *sbuf, const char *name, size_t size)
 	sbuf->rf=0;
 	sbuf->frame=0;
 	sbuf->bufsz=size;
-	if((sbuf->shmname=(char*)malloc(strlen(name)+1))==NULL) return -1;
-	strcpy(sbuf->shmname,name);
+	if((sbuf->shmname=(char*)malloc(strlen(name)+1))==NULL){
+		return -1;
+	}strcpy(sbuf->shmname,name);
 	
 	if((sbuf->shm=shm_open(sbuf->shmname,O_RDWR|O_CREAT|O_EXCL,(mode_t)0666))==-1){
 		free(sbuf->shmname);

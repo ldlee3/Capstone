@@ -59,6 +59,7 @@ cv::Mat slMat2cvMat(sl::Mat& input)
 
 void upcmsg_h(const char *msg)
 {
+	printf("UPC server error: %s\n",msg);
 	flag=0;
 }
 
@@ -199,8 +200,10 @@ int main()
 	zed_init.camera_resolution=sl::RESOLUTION_HD720;
 	zed_init.depth_mode=sl::DEPTH_MODE_PERFORMANCE;
 	zed_init.coordinate_units=sl::UNIT_MILLIMETER;
-	if(zed.open(zed_init)!=sl::SUCCESS) return 1;
-	zed_run.sensing_mode=sl::SENSING_MODE_STANDARD;
+	if(zed.open(zed_init)!=sl::SUCCESS){
+		printf("zed init failure\n");
+		return 1;
+	}zed_run.sensing_mode=sl::SENSING_MODE_STANDARD;
 
 	sl::Resolution zed_res=zed.getResolution();
 	zed_buflen=zed_res.width*zed_res.height*4;
@@ -209,21 +212,25 @@ int main()
 	if(pthread_mutex_init(&mtx_buf,NULL)!=0) return -1;
 
 	if(shmbuf_init(&shmbuf_left,"shm_zedleft",zed_buflen)==-1){
+		printf("shared memory buffer init failure left\n");
 		pthread_mutex_destroy(&mtx_buf);
 		zed.close();
 		return -1;
 	}if(shmbuf_init(&shmbuf_right,"shm_zedright",zed_buflen)==-1){
+		printf("shared memory buffer init failure right\n");
 		shmbuf_destroy(&shmbuf_left);
 		pthread_mutex_destroy(&mtx_buf);
 		zed.close();
 		return -1;
 	}if(shmbuf_init(&shmbuf_depth,"shm_zeddepth",zed_buflen)==-1){
+		printf("shared memory buffer init failure depth\n");
 		shmbuf_destroy(&shmbuf_left);
 		shmbuf_destroy(&shmbuf_right);
 		pthread_mutex_destroy(&mtx_buf);
 		zed.close();
 		return -1;
 	}if(shmbuf_init(&shmbuf_sobel,"shm_cvsobel",zed_buflen)==-1){
+		printf("shared memory buffer init failure sobel\n");
 		shmbuf_destroy(&shmbuf_left);
 		shmbuf_destroy(&shmbuf_right);
 		shmbuf_destroy(&shmbuf_depth);
@@ -238,7 +245,8 @@ int main()
 	cv::Mat cv_left=slMat2cvMat(left),cv_right=slMat2cvMat(right),cv_depth=slMat2cvMat(depth);
 	cv::Mat cv_sobel(zed_res.height,zed_res.width,CV_8UC4,shmbuf_sobel.buf);
 
-	if((upc=upc_init("/home/nvidia/roverupc/","cvzshare",&upccmd_h,&upcmsg_h,-1,2))==NULL){
+	if((upc=upc_init("/home/nvidia/roverupc/","cvzshare",&upccmd_h,&upcmsg_h,-1,5))==NULL){
+		printf("upc init failure\n");
 		shmbuf_destroy(&shmbuf_left);
 		shmbuf_destroy(&shmbuf_right);
 		shmbuf_destroy(&shmbuf_depth);
@@ -258,35 +266,38 @@ printf("init passed\n");
 				shmbuf_write_lock(&shmbuf_left);
 				zed.retrieveImage(left,sl::VIEW_LEFT);
 				//memcpy(shmbuf_left.buf,cv_left.data,shmbuf_left.bufsz);
-				shmbuf_left.frame=(shmbuf_left.frame+1)%128;
+				shmbuf_left.frame=(shmbuf_left.frame+1)%32;
 				shmbuf_write_release(&shmbuf_left);
 			}if(fl_right){
 				shmbuf_write_lock(&shmbuf_right);
 				zed.retrieveImage(right,sl::VIEW_RIGHT);
 				//memcpy(shmbuf_right.buf,cv_right.data,shmbuf_right.bufsz);
-				shmbuf_right.frame=(shmbuf_right.frame+1)%128;
+				shmbuf_right.frame=(shmbuf_right.frame+1)%32;
 				shmbuf_write_release(&shmbuf_right);
 			}if(fl_depth){
 				shmbuf_write_lock(&shmbuf_depth);
 				zed.retrieveImage(depth,sl::VIEW_DEPTH);
 				//memcpy(shmbuf_depth.buf,cv_depth.data,shmbuf_depth.bufsz);
-				shmbuf_depth.frame=(shmbuf_depth.frame+1)%128;
+				shmbuf_depth.frame=(shmbuf_depth.frame+1)%32;
 				shmbuf_write_release(&shmbuf_depth);
 			}if(fl_sobel){
 				shmbuf_write_lock(&shmbuf_sobel);
-				cv::Sobel(cv_left,cv_sobel,-1,1,1);
+				//cv::Sobel(cv_left,cv_sobel,-1,1,1);
+				cv::threshold(cv_left,cv_sobel,40,255,cv::THRESH_BINARY);
 				//memcpy(shmbuf_sobel.buf,cv_sobel.data,shmbuf_sobel.bufsz);
-				shmbuf_sobel.frame=(shmbuf_sobel.frame+1)%128;
+				shmbuf_sobel.frame=(shmbuf_sobel.frame+1)%32;
 				shmbuf_write_release(&shmbuf_sobel);
 			}pthread_mutex_unlock(&mtx_buf);
-printf("shared buffers loaded\n");
+//printf("shared buffers loaded\n");
 
 			//cv::imshow("Left View",cv_depth);
 			//cv::imshow("Sobel Filter",cv_sobel);
 			//cv::waitKey(30);
-		}else printf("ZED grab fail\n");
-		framedelay.tv_sec=0;
-		framedelay.tv_nsec=10000000;
+		}else{
+			printf("ZED grab fail\n");
+			break;
+		}framedelay.tv_sec=0;
+		framedelay.tv_nsec=15000000;
 		nanosleep(&framedelay,NULL);
 	}
 printf("loop exit\n");
