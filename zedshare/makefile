@@ -10,11 +10,20 @@ DLIB=/usr/local/zed/lib/libsl_input.so /usr/local/zed/lib/libsl_core.so /usr/loc
 upc.o: upc.c upc.h
 	$(CC) $(CFLAGS) -o upc.o -c upc.c
 
-cvz.o: cvz.cpp upc.h
+shmbuf.o: shmbuf.c shmbuf.h
+	$(CC) $(CFLAGS) -o shmbuf.o -c shmbuf.c
+
+cvz.o: cvz.cpp upc.h shmbuf.h
 	$(CC) $(INCL) $(CFLAGS) -o cvz.o -c cvz.cpp
 
-CVZShare: cvz.o
-	$(CC) -o CVZShare cvz.o upc.o $(SLIB) -rdynamic $(DLIB) $(LFLAGS)
+cvzview.o: cvzview.cpp upc.h
+	$(CC) $(INCL) $(CFLAGS) -o cvzview.o -c cvzview.cpp
+
+CVZView: cvzview.o upc.o
+	$(CC) -o CVZView cvzview.o upc.o $(SLIB) -rdynamic $(DLIB) $(LFLAGS)
+
+CVZShare: cvz.o upc.o shmbuf.o
+	$(CC) -o CVZShare cvz.o upc.o shmbuf.o $(SLIB) -rdynamic $(DLIB) $(LFLAGS)
 
 clean:
-	rm CVZShare cvz.o
+	rm CVZShare cvz.o upc.o shmbuf.o

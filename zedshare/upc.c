@@ -365,18 +365,23 @@ struct upc_inst *upc_init(const char *root, const char *name, char *(*cmdh)(cons
 	
 	//directory validation and creation
 	if((rootfd=open(root,O_RDONLY|O_DIRECTORY|O_PATH|O_CLOEXEC))<0){
+		DBGMSGE("root dir open failed in upc_init")
 		return NULL;
 	}if((mkdirat(rootfd,UPC_DIRLOGS,UPC_FMODE))<0 && errno!=EEXIST){
+		DBGMSGE("mkdir logs failed in upc_init")
 		close(rootfd);
 		return NULL;
 	}if((logsfd=openat(rootfd,UPC_DIRLOGS,O_RDONLY|O_DIRECTORY|O_CLOEXEC))<0){
+		DBGMSGE("open logs dir failed in upc_init")
 		close(rootfd);
 		return NULL;
 	}if((mkdirat(rootfd,UPC_DIRCOMM,UPC_FMODE))<0 && errno!=EEXIST){
+		DBGMSGE("mkdir comm failed in upc_init")
 		close(logsfd);
 		close(rootfd);
 		return NULL;
 	}if((commfd=openat(rootfd,UPC_DIRCOMM,O_RDONLY|O_DIRECTORY|O_CLOEXEC))<0){
+		DBGMSGE("open comm dir failed in upc_init")
 		close(logsfd);
 		close(rootfd);
 		return NULL;
@@ -390,12 +395,15 @@ struct upc_inst *upc_init(const char *root, const char *name, char *(*cmdh)(cons
 	strcat(addr.sun_path,name);
 	strcat(addr.sun_path,UPC_EXTSOCK);
 	if(flock(commfd,LOCK_EX)<0){
+		DBGMSGE("comm lock failed in upc_init")
 		close(logsfd);
 		goto _cleanup0;
 	}if((cmdsock=socket(AF_UNIX,SOCK_STREAM,0))<0){
+		DBGMSGE("socket create failed in upc_init")
 		close(logsfd);
 		goto _cleanup1;
 	}if(bind(cmdsock,(struct sockaddr*)&addr,sizeof(struct sockaddr_un))<0){
+		DBGMSGE("socket bind failed in upc_init")
 		close(logsfd);
 		goto _cleanup2;
 	}
@@ -407,6 +415,7 @@ struct upc_inst *upc_init(const char *root, const char *name, char *(*cmdh)(cons
 		strcat(pathbuf,name);
 		strcat(pathbuf,UPC_EXTLOGS);
 		if((logfd=openat(logsfd,pathbuf,O_RDWR|O_CREAT|O_TRUNC|O_CLOEXEC,UPC_FMODE))<0){
+			DBGMSGE("logfile creation failed in upc_init")
 			close(logsfd);
 			goto _cleanup3;
 		}logcl=1;
@@ -415,8 +424,10 @@ struct upc_inst *upc_init(const char *root, const char *name, char *(*cmdh)(cons
 	
 	//instance struct allocation
 	if((upc_data=(struct upc_inst*)malloc(sizeof(struct upc_inst)))==NULL){
+		DBGMSGE("upc_inst malloc failed in upc_init")
 		goto _cleanup4;
 	}if((upc_data->root=(char*)malloc(rootlen+pathterm+1))==NULL){
+		DBGMSGE("upc_inst root malloc failed in upc_init")
 		goto _cleanup5;
 	}strcpy(upc_data->root,root);
 	if(pathterm){ upc_data->root[rootlen]='/'; upc_data->root[rootlen+1]='\0'; }
@@ -430,17 +441,22 @@ struct upc_inst *upc_init(const char *root, const char *name, char *(*cmdh)(cons
 	upc_data->clict=0;
 	upc_data->clilist=NULL;
 	if((errno=pthread_mutex_init(&(upc_data->mtx_cli),NULL))!=0){
+		DBGMSGE("cli mutex init failed in upc_init")
 		goto _cleanup6;
 	}if((errno=pthread_mutex_init(&(upc_data->mtx_log),NULL))!=0){
+		DBGMSGE("log mutex init failed in upc_init")
 		goto _cleanup7;
 	}if((errno=pthread_cond_init(&(upc_data->cond_maxcli),NULL))!=0){
+		DBGMSGE("maxcli cond init failed in upc_init")
 		goto _cleanup8;
 	}
 	
 	//listen socket and start server thread
 	if(listen(upc_data->sock,1)<0){
+		DBGMSGE("socket listen failed in upc_init")
 		goto _cleanup9;
 	}if((errno=pthread_create(&(upc_data->thread),NULL,(void *(*)(void*))&upc_main,(void*)upc_data))!=0){
+		DBGMSGE("thread create failed in upc_init")
 		goto _cleanup9;
 	}flock(commfd,LOCK_UN);
 	close(commfd);

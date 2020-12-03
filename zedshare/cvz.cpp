@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <time.h>
+#include <string.h>
 #include <signal.h>
 #include <pthread.h>
 
@@ -17,22 +18,14 @@
 
 #include "sl/Camera.hpp"
 
+#include "shmbuf.h"
 #include "upc.h"
-
-struct shm_buf{
-	char *name;
-	int shm,frame;
-	size_t buflen;
-	char *buf;
-	char rf,wf;
-	sem_t sem;
-};
 
 int flag;
 
 pthread_mutex_t mtx_buf;
 int fl_left,fl_right,fl_depth,fl_sobel;
-struct shm_buf shmbuf_left,shmbuf_right,shmbuf_depth,shmbuf_sobel;
+struct shmbuf shmbuf_left,shmbuf_right,shmbuf_depth,shmbuf_sobel;
 
 void sig_h(int s){
         printf("sigint\n");
@@ -62,78 +55,6 @@ cv::Mat slMat2cvMat(sl::Mat& input)
         // Since cv::Mat data requires a uchar* pointer, we get the uchar1 pointer from sl::Mat (getPtr<T>())
         // cv::Mat and sl::Mat will share a single memory structure
         return cv::Mat(input.getHeight(), input.getWidth(), cv_type, input.getPtr<sl::uchar1>(sl::MEM_CPU));
-}
-
-int shmbuf_read_get(struct shm_buf *shmbuf)
-{
-	while(1){
-		sem_wait(&(shmbuf->sem));
-		if(!(shmbuf->wf)){
-			shmbuf->rf++;
-			sem_post(&(shmbuf->sem));
-			break;
-		}sem_post(&(shmbuf->sem));
-	}return shmbuf->frame;
-}
-
-void shmbuf_read_release(struct shm_buf *shmbuf)
-{
-	sem_wait(&(shmbuf->sem));
-	if(shmbuf->rf>0) shmbuf->rf--;
-	sem_post(&(shmbuf->sem));
-}
-
-void shmbuf_load(cv::Mat img, struct shm_buf *shmbuf)//load frame from Mat
-{
-	sem_wait(&(shmbuf->sem));
-	shmbuf->wf=1;
-	sem_post(&(shmbuf->sem));
-	while(shmbuf->rf);
-	for(int i=0;i<img.rows;i++) memcpy(shmbuf->buf,img.ptr(i),img.cols*4);
-	shmbuf->frame=(shmbuf->frame+1)%32;
-	shmbuf->wf=0;
-}
-
-void shmbuf_destroy(struct shm_buf *shmbuf){
-	sem_destroy(&(shmbuf->sem));
-	munmap(shmbuf->buf,shmbuf->buflen);
-	close(shmbuf->shm);
-	shm_unlink(shmbuf->name);
-	free(shmbuf->name);
-}
-
-int shmbuf_init(struct shm_buf *shmbuf, const char *shmname, size_t buflen)
-{
-	shmbuf->wf=0;
-	shmbuf->rf=0;
-	shmbuf->frame=0;
-	shmbuf->buflen=buflen;
-	if((shmbuf->name=(char*)malloc(strlen(shmname)+2))==NULL) return -1;
-	shmbuf->name[0]='/';
-	strcpy(shmbuf->name+1,shmname);
-	
-	if((shmbuf->shm=shm_open(shmbuf->name,O_RDWR|O_CREAT|O_EXCL,S_IRUSR|S_IWUSR))==-1){
-		free(shmbuf->name);
-		return -1;
-	}if(ftruncate(shmbuf->shm,shmbuf->buflen)==-1){
-		close(shmbuf->shm);
-		shm_unlink(shmbuf->name);
-		free(shmbuf->name);
-		return -1;
-	}if((shmbuf->buf=(char*)mmap(NULL,shmbuf->buflen,PROT_READ|PROT_WRITE,MAP_SHARED,shmbuf->shm,0))==MAP_FAILED){
-		close(shmbuf->shm);
-		shm_unlink(shmbuf->name);
-		free(shmbuf->name);
-		return -1;
-	}if((sem_init(&(shmbuf->sem),0,1))==-1){
-		munmap(shmbuf->buf,shmbuf->buflen);
-		close(shmbuf->shm);
-		shm_unlink(shmbuf->name);
-		free(shmbuf->name);
-		return -1;
-	}
-	
-	return 0;
 }
 
 void upcmsg_h(const char *msg)
@@ -210,31 +131,43 @@ char *upccmd_h(const char *cmd)
 	}else if(!strcmp(cmd,"read left lock")){
 		pthread_mutex_lock(&mtx_buf);
 		if(fl_left){
-			int tmp=shmbuf_read_get(&shmbuf_left);
-			snprintf(reply,64,"ACK %d",tmp);
-		}else strcpy(reply,"DOWN");
-		pthread_mutex_unlock(&mtx_buf);
+			pthread_mutex_unlock(&mtx_buf);
+			shmbuf_read_lock(&shmbuf_left);
+			snprintf(reply,64,"ACK %d",shmbuf_left.frame);
+		}else{
+			pthread_mutex_unlock(&mtx_buf);
+			strcpy(reply,"DOWN");
+		}
 	}else if(!strcmp(cmd,"read right lock")){
 		pthread_mutex_lock(&mtx_buf);
 		if(fl_right){
-			int tmp=shmbuf_read_get(&shmbuf_right);
-			snprintf(reply,64,"ACK %d",tmp);
-		}else strcpy(reply,"DOWN");
-		pthread_mutex_unlock(&mtx_buf);
+			pthread_mutex_unlock(&mtx_buf);
+			shmbuf_read_lock(&shmbuf_right);
+			snprintf(reply,64,"ACK %d",shmbuf_right.frame);
+		}else{
+			pthread_mutex_unlock(&mtx_buf);
+			strcpy(reply,"DOWN");
+		}
 	}else if(!strcmp(cmd,"read depth lock")){
 		pthread_mutex_lock(&mtx_buf);
 		if(fl_depth){
-			int tmp=shmbuf_read_get(&shmbuf_depth);
-			snprintf(reply,64,"ACK %d",tmp);
-		}else strcpy(reply,"DOWN");
-		pthread_mutex_unlock(&mtx_buf);
+			pthread_mutex_unlock(&mtx_buf);
+			shmbuf_read_lock(&shmbuf_depth);
+			snprintf(reply,64,"ACK %d",shmbuf_depth.frame);
+		}else{
+ 			pthread_mutex_unlock(&mtx_buf);
+			strcpy(reply,"DOWN");
+		}
 	}else if(!strcmp(cmd,"read sobel lock")){
 		pthread_mutex_lock(&mtx_buf);
 		if(fl_sobel){
-			int tmp=shmbuf_read_get(&shmbuf_sobel);
-			snprintf(reply,64,"ACK %d",tmp);
-		}else strcpy(reply,"DOWN");
-		pthread_mutex_unlock(&mtx_buf);
+			pthread_mutex_unlock(&mtx_buf);
+			shmbuf_read_lock(&shmbuf_sobel);
+			snprintf(reply,64,"ACK %d",shmbuf_sobel.frame);
+		}else{
+			pthread_mutex_unlock(&mtx_buf);
+			strcpy(reply,"DOWN");
+		}
 	}else if(!strcmp(cmd,"read left release")){
 		shmbuf_read_release(&shmbuf_left);
 		strcpy(reply,"ACK");
@@ -244,7 +177,7 @@ char *upccmd_h(const char *cmd)
 	}else if(!strcmp(cmd,"read depth release")){
 		shmbuf_read_release(&shmbuf_depth);
 		strcpy(reply,"ACK");
-	}else if(!strcmp(cmd,"read soble release")){
+	}else if(!strcmp(cmd,"read sobel release")){
 		shmbuf_read_release(&shmbuf_sobel);
 		strcpy(reply,"ACK");
 	}else strcpy(reply,"UNKNOWN");	
@@ -266,19 +199,12 @@ int main()
 	zed_init.camera_resolution=sl::RESOLUTION_HD720;
 	zed_init.depth_mode=sl::DEPTH_MODE_PERFORMANCE;
 	zed_init.coordinate_units=sl::UNIT_MILLIMETER;
-
 	if(zed.open(zed_init)!=sl::SUCCESS) return 1;
-
 	zed_run.sensing_mode=sl::SENSING_MODE_STANDARD;
 
 	sl::Resolution zed_res=zed.getResolution();
-	sl::Mat left(zed_res.width,zed_res.height,sl::MAT_TYPE_8U_C4);
-	sl::Mat right(zed_res.width,zed_res.height,sl::MAT_TYPE_8U_C4);
-	sl::Mat depth(zed_res.width,zed_res.height,sl::MAT_TYPE_8U_C4);	
-	cv::Mat cv_left=slMat2cvMat(left),cv_right=slMat2cvMat(right),cv_depth=slMat2cvMat(depth);
-	cv::Mat cv_sobel(zed_res.height,zed_res.width,CV_8UC4);
-
 	zed_buflen=zed_res.width*zed_res.height*4;
+	printf("resolution %ldx%ld\n",zed_res.width,zed_res.height);
 	
 	if(pthread_mutex_init(&mtx_buf,NULL)!=0) return -1;
 
@@ -306,37 +232,60 @@ int main()
 		return -1;
 	}
 
-	if((upc=upc_init("~/roverupc/","cvzshare",&upccmd_h,&upcmsg_h,-1,2))==NULL){
+	sl::Mat left(zed_res.width,zed_res.height,sl::MAT_TYPE_8U_C4,shmbuf_left.buf,zed_res.width*4,sl::MEM_CPU);
+	sl::Mat right(zed_res.width,zed_res.height,sl::MAT_TYPE_8U_C4,shmbuf_right.buf,zed_res.width*4,sl::MEM_CPU);
+	sl::Mat depth(zed_res.width,zed_res.height,sl::MAT_TYPE_8U_C4,shmbuf_depth.buf,zed_res.width*4,sl::MEM_CPU);
+	cv::Mat cv_left=slMat2cvMat(left),cv_right=slMat2cvMat(right),cv_depth=slMat2cvMat(depth);
+	cv::Mat cv_sobel(zed_res.height,zed_res.width,CV_8UC4,shmbuf_sobel.buf);
+
+	if((upc=upc_init("/home/nvidia/roverupc/","cvzshare",&upccmd_h,&upcmsg_h,-1,2))==NULL){
 		shmbuf_destroy(&shmbuf_left);
 		shmbuf_destroy(&shmbuf_right);
 		shmbuf_destroy(&shmbuf_depth);
 		shmbuf_destroy(&shmbuf_sobel);
 		pthread_mutex_destroy(&mtx_buf);
 		zed.close();
+		return -1;
 	}
-
+	
 printf("init passed\n");
-	flag=1;
+	flag=fl_right=fl_left=fl_depth=fl_sobel=1;
 	struct timespec framedelay;
 	while(flag){
 		if(zed.grab(zed_run)==sl::SUCCESS){
-			zed.retrieveImage(left,sl::VIEW_LEFT);
-			zed.retrieveImage(right,sl::VIEW_RIGHT);
-			zed.retrieveMeasure(depth,sl::MEASURE_DEPTH);
-			cv::Sobel(cv_left,cv_sobel,-1,1,1);
-printf("frames loaded\n");
 			pthread_mutex_lock(&mtx_buf);
-			if(fl_left) shmbuf_load(cv_left,&shmbuf_left);
-			if(fl_right) shmbuf_load(cv_right,&shmbuf_right);
-			if(fl_depth) shmbuf_load(cv_depth,&shmbuf_depth);
-			if(fl_sobel) shmbuf_load(cv_sobel,&shmbuf_sobel);
-			pthread_mutex_unlock(&mtx_buf);
+			if(fl_left){
+				shmbuf_write_lock(&shmbuf_left);
+				zed.retrieveImage(left,sl::VIEW_LEFT);
+				//memcpy(shmbuf_left.buf,cv_left.data,shmbuf_left.bufsz);
+				shmbuf_left.frame=(shmbuf_left.frame+1)%128;
+				shmbuf_write_release(&shmbuf_left);
+			}if(fl_right){
+				shmbuf_write_lock(&shmbuf_right);
+				zed.retrieveImage(right,sl::VIEW_RIGHT);
+				//memcpy(shmbuf_right.buf,cv_right.data,shmbuf_right.bufsz);
+				shmbuf_right.frame=(shmbuf_right.frame+1)%128;
+				shmbuf_write_release(&shmbuf_right);
+			}if(fl_depth){
+				shmbuf_write_lock(&shmbuf_depth);
+				zed.retrieveImage(depth,sl::VIEW_DEPTH);
+				//memcpy(shmbuf_depth.buf,cv_depth.data,shmbuf_depth.bufsz);
+				shmbuf_depth.frame=(shmbuf_depth.frame+1)%128;
+				shmbuf_write_release(&shmbuf_depth);
+			}if(fl_sobel){
+				shmbuf_write_lock(&shmbuf_sobel);
+				cv::Sobel(cv_left,cv_sobel,-1,1,1);
+				//memcpy(shmbuf_sobel.buf,cv_sobel.data,shmbuf_sobel.bufsz);
+				shmbuf_sobel.frame=(shmbuf_sobel.frame+1)%128;
+				shmbuf_write_release(&shmbuf_sobel);
+			}pthread_mutex_unlock(&mtx_buf);
 printf("shared buffers loaded\n");
 
-			//cv::imshow("Left View",cv_left);
+			//cv::imshow("Left View",cv_depth);
 			//cv::imshow("Sobel Filter",cv_sobel);
 			//cv::waitKey(30);
-		}framedelay.tv_sec=0;
+		}else printf("ZED grab fail\n");
+		framedelay.tv_sec=0;
 		framedelay.tv_nsec=10000000;
 		nanosleep(&framedelay,NULL);
 	}
