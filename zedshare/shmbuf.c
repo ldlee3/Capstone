@@ -24,7 +24,7 @@ void shmbuf_read_release(struct shmbuf *sbuf)
 
 void shmbuf_write_lock(struct shmbuf *sbuf)
 {
-	sem_wait(&(sbuf->sem));
+	while(sem_wait(&(sbuf->sem)),sbuf->wf) sem_post(&(sbuf->sem));
 	sbuf->wf=1;
 	sem_post(&(sbuf->sem));
 	while(sem_wait(&(sbuf->sem)),sbuf->rf) sem_post(&(sbuf->sem));

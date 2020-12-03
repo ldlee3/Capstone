@@ -60,7 +60,7 @@ class Sender():
 			print('End-Of-Stream reached')
 			self._shutdown()
 		else:
-		       print('ERROR: Unexpected message received')
+		       print('ERROR: Unexpected message received: %s'%message.get_name())
 		return True
 
 
